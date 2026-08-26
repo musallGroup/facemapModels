@@ -17,13 +17,20 @@ facemapModels/
 
 │── LabelForge/
 
-└── playground/
-    └── Mick_Daubenfeld/
+├── Playground/
+│   └── MickDaubenfeld/
+│       ├── FrontView/
+│       └── SideView/
+└── docs/
 ```
 
 ### README.md
 
 Project documentation.
+
+The separation between repository code, network datasets, finished model
+packages, and archives is documented in
+[`docs/MODEL_ORGANIZATION.md`](docs/MODEL_ORGANIZATION.md).
 
 ### LabelForge/
 
@@ -31,7 +38,7 @@ Desktop application for creating base-model datasets and refining existing
 FaceMap or DeepLabCut models. It includes frame selection, keypoint grouping,
 annotation, review, export, and external-model metadata workflows.
 
-### playground/
+### Playground/
 
 Development area for experimental scripts.
 
