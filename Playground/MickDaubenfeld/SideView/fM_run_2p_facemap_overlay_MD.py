@@ -3,10 +3,10 @@ import cv2
 import numpy as np
 from facemap.pose.pose import Pose
 
-CLIP_DIR = Path(r"Z:\Team\Mick\2 Photon\QC_01_one_min_clip")
-MODEL_PATH = Path(r"Z:\Team\Mick\Facemap_Models\Current_Model\refined_model_with_Dennis12Frames.pt")
+CLIP_DIR = Path(r"Z:\Team\Mick\FM_Side_View\2 Photon\New_Dataset\Model_QC\QC_01_one_min_clip")
+MODEL_PATH = Path(r"Z:\Team\Mick\FM_Side_View\00_LabelForge_Basemodels\SideView_Face_2P_v1\SideView_Face_2P_v1.pt")
 
-OUT_DIR = Path(r"Z:\Team\Mick\2 Photon\QC_02_facemap_overlay")
+OUT_DIR = Path(r"Z:\Team\Mick\FM_Side_View\2 Photon\New_Dataset\Model_QC\QC_02_facemap_overlay")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 EXCLUDE_LABELS = {"paw", "nose(r)"}

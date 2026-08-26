@@ -124,7 +124,7 @@ The goal is to simplify the creation of representative and diverse training data
 
 Extracted frames are manually annotated to generate training datasets for pose estimation models.
 
-Future versions aim to provide an integrated annotation workflow while remaining compatible with existing labeling pipelines.
+LabelForge provides an integrated annotation and review workflow while remaining compatible with existing labeling pipelines.
 
 ---
 
@@ -184,11 +184,11 @@ This approach
 
 ---
 
-## Future development
+## Ongoing development
 
-The long-term goal is to combine the complete workflow into a single software application.
+LabelForge is the central application for this workflow. Ongoing development focuses on moving proven Playground scripts into stable application features.
 
-Instead of relying on individual scripts, future versions should provide a graphical interface capable of
+The application workflow covers or is being extended to cover
 
 - dataset management
 - frame extraction
@@ -216,6 +216,6 @@ through an additional visibility prediction branch.
 
 ## Current status
 
-This repository is currently under active development.
+This repository is under active development. LabelForge contains the stable interactive workflow.
 
-Most functionality is implemented as prototype scripts inside the playground before becoming part of the stable workflow.
+Experimental processing and analysis scripts remain in the Playground until they are reusable enough to promote.

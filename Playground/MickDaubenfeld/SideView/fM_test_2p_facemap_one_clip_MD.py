@@ -4,9 +4,9 @@ import subprocess
 import sys
 
 VIDEO_ROOT = Path(r"\\naskampa\data\BpodBehavior\2pvideos")
-MODEL_PATH = Path(r"\\Naskampa\lts\Team\Mick\Facemap_Models\Current_Model\refined_model_with_Dennis12Frames.pt")
+MODEL_PATH = Path(r"\\Naskampa\lts\Team\Mick\FM_Side_View\00_LabelForge_Basemodels\SideView_Face_2P_v1\SideView_Face_2P_v1.pt")
 
-OUT_ROOT = Path(r"Z:\Team\Mick\2 Photon")
+OUT_ROOT = Path(r"Z:\Team\Mick\FM_Side_View\2 Photon\New_Dataset\Model_QC")
 CLIP_SECONDS = 60
 START_SECONDS = 0
 

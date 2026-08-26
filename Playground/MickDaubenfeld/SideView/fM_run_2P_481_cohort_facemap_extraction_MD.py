@@ -28,12 +28,12 @@ SESSIONS_ROOT = Path(
 )
 
 MODEL_PATH = Path(
-    r"\\Naskampa\lts\Team\Mick\2 Photon\New_Dataset\Current_Model"
-    r"\refined_model_2P_newDataset_481_R1.pt"
+    r"\\Naskampa\lts\Team\Mick\FM_Side_View\00_LabelForge_Basemodels\SideView_Face_2P_v1"
+    r"\SideView_Face_2P_v1.pt"
 )
 
 OUTPUT_ROOT = Path(
-    r"\\Naskampa\lts\Team\Mick\2 Photon\New_Dataset\Cohort"
+    r"\\Naskampa\lts\Team\Mick\FM_Side_View\2 Photon\New_Dataset\Cohort"
 )
 
 VIDEO_GLOB = "*_cam1_*.avi"

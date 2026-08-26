@@ -24,12 +24,14 @@ The currently promoted packages are:
 
 | Acquisition | Purpose | Package |
 |---|---|---|
-| Front view | General face and tongue | `FrontView_General` |
-| Side view, general | Face / pose, Mick cohort | `SideView_General_Mick` |
-| Side view, general | Face / pose, Dennis cohort | `SideView_General_Dennis` |
-| Side view, general | Eye / pupil | `SideView_General_Pupil` |
-| Side view, 2P | Face / pose | `SideView_2P_Face` |
-| Side view, 2P | Eye / pupil | `SideView_2P_Pupil` |
+| Front view | General face and tongue | `FrontView_FaceTongue_General_v1` |
+| Side view, general | Face / pose, Mick cohort | `SideView_Face_Mick_v1` |
+| Side view, general | Face / pose, Dennis cohort | `SideView_Face_Dennis_v1` |
+| Side view, general | Eye / pupil | `SideView_Pupil_General_v1` |
+| Side view, 2P | Face / pose | `SideView_Face_2P_v1` |
+| Side view, 2P | Eye / pupil | `SideView_Pupil_2P_v1` |
+
+Public model names use <View>_<Target>_<Dataset>_vN. Historical training filenames remain unchanged in their source folders so old scripts and training records stay reproducible.
 
 ## Data lifecycle
 
