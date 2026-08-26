@@ -9,7 +9,7 @@ mice = ["458", "460", "461", "462"];
 
 baseBhvPath = '\\Naskampa\lts\BpodBehavior';
 
-outDir = '\\Naskampa\lts\Team\Mick\FM_Dennis_Cohort\Cohort_Summary\Performance';
+outDir = '\\Naskampa\lts\Team\Mick\FM_Side_View\FM_Dennis_Cohort\Cohort_Summary\Performance';
 
 if ~exist(outDir, 'dir')
     mkdir(outDir);

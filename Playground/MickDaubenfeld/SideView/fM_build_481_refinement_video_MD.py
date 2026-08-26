@@ -10,11 +10,11 @@ import cv2
 # ============================================================
 
 FRAME_DIR = Path(
-    r"\\Naskampa\lts\Team\Mick\2 Photon\New_Dataset\Refinement_Training\Refinement_Frames"
+    r"\\Naskampa\lts\Team\Mick\FM_Side_View\2 Photon\New_Dataset\Refinement_Training\Refinement_Frames"
 )
 
 OUTPUT_VIDEO = Path(
-    r"\\Naskampa\lts\Team\Mick\2 Photon\New_Dataset\Refinement_Training\Refinement_Videos"
+    r"\\Naskampa\lts\Team\Mick\FM_Side_View\2 Photon\New_Dataset\Refinement_Training\Refinement_Videos"
     r"\2P_newDataset_481_refinement_video.avi"
 )
 

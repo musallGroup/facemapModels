@@ -29,13 +29,13 @@ from facemap.pose.pose import Pose
 
 
 MODEL_PATH = Path(
-    r"\\NASKAMPA\lts\Team\Mick\FM_Front_View\2_Photon\Current_Model"
-    r"\Frontview_Base_v1_7kp.pt"
+    r"\\NASKAMPA\lts\Team\Mick\FM_Front_View\00_LabelForge_Basemodels\FrontView_FaceTongue_General_v1"
+    r"\FrontView_FaceTongue_General_v1.pt"
 )
 
 OUTPUT_ROOT = Path(
-    r"\\NASKAMPA\lts\Team\Mick\FM_Front_View\2_Photon"
-    r"\Training_Data\Round_04_Tongue_Candidates"
+    r"\\NASKAMPA\lts\Team\Mick\FM_Front_View\Basemodel+Tongue"
+    r"\Tongue_Candidates"
 )
 
 SESSION_DIRS = [

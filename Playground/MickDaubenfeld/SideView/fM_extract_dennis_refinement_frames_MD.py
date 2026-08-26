@@ -11,7 +11,7 @@ import cv2
 # ============================================================
 
 OUTPUT_ROOT = Path(
-    r"\\Naskampa\lts\Team\Mick\FM_Dennis_Cohort"
+    r"\\Naskampa\lts\Team\Mick\FM_Side_View\FM_Dennis_Cohort"
 )
 
 COMBINED_FRAME_DIR = OUTPUT_ROOT / "Refinement_Training" / "Dennis12_Frames"

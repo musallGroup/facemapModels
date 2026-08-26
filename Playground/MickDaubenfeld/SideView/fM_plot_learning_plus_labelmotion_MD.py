@@ -15,11 +15,11 @@ import matplotlib.pyplot as plt
 MOUSE_ID = "460"
 
 performance_csv = Path(
-    r"Z:\Team\Mick\FM_Dennis_Cohort\Cohort_Summary\Performance\performance_460.csv"
+    r"Z:\Team\Mick\FM_Side_View\FM_Dennis_Cohort\Cohort_Summary\Performance\performance_460.csv"
 )
 
 raw_pose_dir = Path(
-    r"Z:\Team\Mick\FM_Dennis_Cohort\Mouse_460\raw_pose"
+    r"Z:\Team\Mick\FM_Side_View\FM_Dennis_Cohort\Mouse_460\raw_pose"
 )
 
 task_csv = Path(
@@ -27,11 +27,11 @@ task_csv = Path(
 )
 
 out_png = Path(
-    r"Z:\Team\Mick\FM_Dennis_Cohort\Cohort_Summary\Figures\mouse_460_learning_plus_labelmotion_final.png"
+    r"Z:\Team\Mick\FM_Side_View\FM_Dennis_Cohort\Cohort_Summary\Figures\mouse_460_learning_plus_labelmotion_final.png"
 )
 
 out_csv = Path(
-    r"Z:\Team\Mick\FM_Dennis_Cohort\Cohort_Summary\Combines_Data\mouse_460_learning_plus_labelmotion_final.csv"
+    r"Z:\Team\Mick\FM_Side_View\FM_Dennis_Cohort\Cohort_Summary\Combines_Data\mouse_460_learning_plus_labelmotion_final.csv"
 )
 
 

@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 MOUSE_ID = "460"
 
 raw_pose_dir = Path(
-    r"Z:\Team\Mick\FM_Dennis_Cohort\Mouse_460\raw_pose"
+    r"Z:\Team\Mick\FM_Side_View\FM_Dennis_Cohort\Mouse_460\raw_pose"
 )
 
 task_csv = Path(

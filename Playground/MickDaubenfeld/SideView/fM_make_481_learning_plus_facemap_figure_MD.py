@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 MOUSE_ID = "481"
 
 PERFORMANCE_CSV = Path(
-    r"Z:\Team\Mick\2 Photon\New_Dataset\Cohort_Summary\Performance\performance_481.csv"
+    r"Z:\Team\Mick\FM_Side_View\2 Photon\New_Dataset\Cohort_Summary\Performance\performance_481.csv"
 )
 
 TASK_CSV = Path(
@@ -22,11 +22,11 @@ TASK_CSV = Path(
 )
 
 FACEMAP_CSV = Path(
-    r"Z:\Team\Mick\2 Photon\New_Dataset\Cohort\Cohort_Summary\all_sessions_all_labels.csv"
+    r"Z:\Team\Mick\FM_Side_View\2 Photon\New_Dataset\Cohort\Cohort_Summary\all_sessions_all_labels.csv"
 )
 
 OUT_DIR = Path(
-    r"Z:\Team\Mick\2 Photon\New_Dataset\Figures"
+    r"Z:\Team\Mick\FM_Side_View\2 Photon\New_Dataset\Figures"
 )
 
 OUT_PNG = OUT_DIR / "mouse_481_learning_plus_facemap_motion.png"

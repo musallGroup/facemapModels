@@ -10,7 +10,7 @@ import cv2
 # ============================================================
 
 OUTPUT_ROOT = Path(
-    r"\\Naskampa\lts\Team\Mick\2 Photon\New_Dataset"
+    r"\\Naskampa\lts\Team\Mick\FM_Side_View\2 Photon\New_Dataset"
 )
 
 FRAME_DIR = OUTPUT_ROOT / "Refinement_Training" / "Refinement_Frames"

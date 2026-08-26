@@ -6,11 +6,11 @@ from pathlib import Path
 # ============================================================
 
 FRAME_DIR = Path(
-    r"\\Naskampa\lts\Team\Mick\FM_Dennis_Cohort\Refinement_Training\Dennis12_Frames"
+    r"\\Naskampa\lts\Team\Mick\FM_Side_View\FM_Dennis_Cohort\Refinement_Training\Dennis12_Frames"
 )
 
 OUTPUT_VIDEO = Path(
-    r"\\Naskampa\lts\Team\Mick\FM_Dennis_Cohort\Refinement_Training\Dennis12_refinement_video.avi"
+    r"\\Naskampa\lts\Team\Mick\FM_Side_View\FM_Dennis_Cohort\Refinement_Training\Dennis12_refinement_video.avi"
 )
 
 FPS = 5
