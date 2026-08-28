@@ -292,11 +292,6 @@ class MainWindow(QMainWindow):
                 background: #343942;
             }
 
-            QComboBox::down-arrow {
-                width: 8px;
-                height: 8px;
-            }
-
             QComboBox QAbstractItemView {
                 background: #1d2026;
                 color: #eaeaea;
@@ -414,6 +409,34 @@ class MainWindow(QMainWindow):
                 border: 1px solid #30353d;
                 border-radius: 9px;
                 padding: 13px;
+            }
+
+            QLabel#SoftwareStatus {
+                color: #e07171;
+                font-weight: 700;
+                padding: 4px 7px;
+            }
+
+            QLabel#SoftwareStatus[ready="true"] { color: #75c995; }
+
+            QLabel#InlineHint {
+                color: #9097a3;
+                font-size: 11px;
+                padding: 0 2px 3px 2px;
+            }
+
+            QLabel#StepPrompt {
+                color: #d6a36b;
+                font-weight: 600;
+                padding-top: 3px;
+            }
+
+            QLabel#TargetExplanation {
+                background: #20242a;
+                color: #c5cad2;
+                border-left: 3px solid #d18b47;
+                border-radius: 5px;
+                padding: 9px 11px;
             }
 
             QPushButton#DangerGhostButton {
