@@ -883,7 +883,13 @@ class TrainingWorkspace(QWidget):
         self._process = QProcess(self); self._process.setProgram(command[0]); self._process.setArguments(command[1:])
         if self._operation.startswith("Testing remote"):
             environment = QProcessEnvironment.systemEnvironment()
-            environment.insert("SSH_ASKPASS", sys.executable)
+            askpass = Path(sys.executable).with_name("LabelForgeAskpass.exe")
+            if not askpass.is_file():
+                self.remote_test_button.setEnabled(True)
+                self._set_remote_test_status(False, "LabelForge MFA helper is missing. Reinstall or update LabelForge.")
+                self._pending_totp = ""; self.totp_code.clear(); self._command_queue = []
+                return
+            environment.insert("SSH_ASKPASS", str(askpass))
             environment.insert("SSH_ASKPASS_REQUIRE", "force")
             environment.insert("DISPLAY", "LabelForge")
             environment.insert("LABELFORGE_SSH_ASKPASS", "1")
