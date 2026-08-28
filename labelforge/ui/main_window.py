@@ -253,6 +253,60 @@ class MainWindow(QMainWindow):
                 border: 1px solid #d18b47;
             }
 
+            QComboBox {
+                background: #14161a;
+                color: #eaeaea;
+                border: 1px solid #3a4049;
+                border-radius: 8px;
+                padding: 7px 34px 7px 10px;
+                min-height: 24px;
+                selection-background-color: #d18b47;
+                selection-color: #111111;
+            }
+
+            QComboBox:hover,
+            QComboBox:focus,
+            QComboBox:on {
+                border: 1px solid #d18b47;
+                background: #181b20;
+            }
+
+            QComboBox:disabled {
+                background: #1b1e23;
+                color: #737984;
+                border-color: #2d323a;
+            }
+
+            QComboBox::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 28px;
+                background: #2a2e35;
+                border: none;
+                border-left: 1px solid #3a4049;
+                border-top-right-radius: 7px;
+                border-bottom-right-radius: 7px;
+            }
+
+            QComboBox::drop-down:hover {
+                background: #343942;
+            }
+
+            QComboBox::down-arrow {
+                width: 8px;
+                height: 8px;
+            }
+
+            QComboBox QAbstractItemView {
+                background: #1d2026;
+                color: #eaeaea;
+                border: 1px solid #3a4049;
+                outline: none;
+                padding: 4px;
+                selection-background-color: #d18b47;
+                selection-color: #111111;
+            }
+
             QSpinBox,
             QDoubleSpinBox {
                 background: #14161a;
