@@ -5,8 +5,8 @@ import subprocess
 import base64
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QProcess, QThread, QTimer, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPixmap
+from PySide6.QtCore import QEvent, QObject, QProcess, QThread, QTimer, Qt, Signal
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QButtonGroup, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QScrollArea,
@@ -60,6 +60,7 @@ class TrainingWorkspace(QWidget):
         self._remote_test_passed = False
         self._bundle_thread: QThread | None = None
         self._bundle_worker: BundleWorker | None = None
+        self._help_topics: dict[QObject, tuple[str, str]] = {}
         self._build_ui()
         self._refresh_software_status()
 
@@ -67,7 +68,7 @@ class TrainingWorkspace(QWidget):
         outer = QVBoxLayout(self); outer.setContentsMargins(0, 0, 0, 0)
         scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
         body = QWidget(); body_layout = QHBoxLayout(body); body_layout.setContentsMargins(28, 30, 28, 42)
-        self.left_rail = self._brand_rail(); self.right_rail = self._route_rail()
+        self.left_rail = self._help_rail(); self.right_rail = self._route_rail()
         content = QWidget(); content.setMaximumWidth(1260); self._training_content = content
         layout = QVBoxLayout(content); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(16)
         title = QLabel("Training Workspace"); title.setObjectName("PageTitle")
@@ -79,6 +80,7 @@ class TrainingWorkspace(QWidget):
         layout.addWidget(title); layout.addWidget(subtitle)
         self.mode_card = self._mode_card(); self.software_card = self._software_card()
         self.run_card = self._run_card(); self.execution_card = self._execution_card(); self.actions_card = self._actions_card()
+        self._setup_context_help()
         layout.addWidget(self.mode_card); layout.addWidget(self.software_card); layout.addWidget(self.run_card)
         layout.addWidget(self.execution_card); layout.addWidget(self.actions_card)
         layout.addStretch(1)
@@ -89,17 +91,20 @@ class TrainingWorkspace(QWidget):
         self.run_card.setVisible(False); self.execution_card.setVisible(False); self.actions_card.setVisible(False)
         QTimer.singleShot(0, self._update_side_rails)
 
-    def _brand_rail(self) -> QFrame:
-        rail = QFrame(); rail.setObjectName("SideRail"); rail.setFixedWidth(190)
+    def _help_rail(self) -> QFrame:
+        rail = QFrame(); rail.setObjectName("SideRail"); rail.setFixedWidth(235)
         layout = QVBoxLayout(rail); layout.setContentsMargins(20, 24, 20, 24); layout.setSpacing(14)
-        logo = QLabel(); logo.setAlignment(Qt.AlignCenter)
-        logo_path = Path(__file__).resolve().parents[2] / "assets" / "labelforge_icon.png"
-        pixmap = QPixmap(str(logo_path))
-        if not pixmap.isNull(): logo.setPixmap(pixmap.scaled(96, 96, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        name = QLabel("LabelForge"); name.setObjectName("RailTitle"); name.setAlignment(Qt.AlignCenter)
-        caption = QLabel("One model.\nOne reproducible run."); caption.setObjectName("RailCaption")
-        caption.setAlignment(Qt.AlignCenter); caption.setWordWrap(True)
-        layout.addWidget(logo); layout.addWidget(name); layout.addWidget(caption); layout.addStretch(1)
+        brand = QLabel("LF"); brand.setObjectName("MiniBrand"); brand.setAlignment(Qt.AlignCenter); brand.setFixedSize(48, 48)
+        eyebrow = QLabel("CONTEXT GUIDE"); eyebrow.setObjectName("RailEyebrow")
+        self.help_title = QLabel("Hover over anything"); self.help_title.setObjectName("HelpBubbleTitle"); self.help_title.setWordWrap(True)
+        self.help_body = QLabel(
+            "Move the pointer over a field or button. This panel explains what it expects, why it matters, and what happens next."
+        )
+        self.help_body.setObjectName("HelpBubbleBody"); self.help_body.setWordWrap(True); self.help_body.setAlignment(Qt.AlignTop)
+        bubble = QFrame(); bubble.setObjectName("HelpBubble")
+        bubble_layout = QVBoxLayout(bubble); bubble_layout.setContentsMargins(15, 15, 15, 17); bubble_layout.setSpacing(8)
+        bubble_layout.addWidget(self.help_title); bubble_layout.addWidget(self.help_body)
+        layout.addWidget(brand, 0, Qt.AlignLeft); layout.addWidget(eyebrow); layout.addWidget(bubble); layout.addStretch(1)
         return rail
 
     def _route_rail(self) -> QFrame:
@@ -122,6 +127,56 @@ class TrainingWorkspace(QWidget):
         wide = self.width() >= 1500
         self.left_rail.setVisible(wide); self.right_rail.setVisible(wide)
         self._training_content.setMaximumWidth(1260 if wide else 1650)
+
+    def _register_help(self, widget: QWidget, title: str, body: str) -> None:
+        topic = (title, body); self._help_topics[widget] = topic; widget.installEventFilter(self)
+        for child in widget.findChildren(QWidget):
+            self._help_topics[child] = topic; child.installEventFilter(self)
+
+    def _setup_context_help(self) -> None:
+        topics = [
+            (self.mode_buttons["Create"], "Create a new model", "Start a new model family without a parent model. LabelForge adds _v1 to the name and keeps the result separate from existing models."),
+            (self.mode_buttons["Refine"], "Refine an existing model", "Continue the same model family. Select the parent .pt model and LabelForge proposes the next version, for example v3 → v4."),
+            (self.mode_buttons["Specialize"], "Specialize a model", "Adapt a proven parent model to a cohort, setup or task. The new model keeps a link to its source but receives its own family name."),
+            (self.backend, "Training backend", "Choose the software that understands the model. Facemap preserves genuine Facemap .pt compatibility; DeepLabCut expects a DLC project and config.yaml."),
+            (self.local_environment, "Local Python environment", "Only relevant for training on this computer. It must contain the selected backend. It disappears automatically for remote or HPC runs."),
+            (self.parent_model, "Parent model", "The existing .pt model used as the starting point for Refine or Specialize. It is read-only and will never be overwritten."),
+            (self.training_data, "Training images or project", "Facemap expects the folder containing labeled training images. DeepLabCut expects the project folder containing config.yaml."),
+            (self.labels_config, "Labels and keypoints", "Facemap uses the LabelForge labels.csv; DLC uses config.yaml. Keypoint order and individually missing keypoints must remain intact."),
+            (self.model_name, "New model name", "This is the identity of the output model. Refine proposes the next version automatically; Create and Specialize add _v1 when needed."),
+            (self.output_dir, "Local package location", "LabelForge creates a reproducible staging folder here. For remote runs this package is later transferred to the training computer."),
+            (self.init_video, "Facemap initialization video", "Facemap uses this video to initialize the model. It is required for Facemap whether training runs locally or on JUSUF."),
+            (self.execution_target, "Where training runs", "Local uses this computer. Remote workstation uses SSH directly. HPC submits a Slurm job so heavy training runs on a compute node, never the login node."),
+            (self.sync_mode, "How files reach the target", "The recommended option copies one self-contained package. The advanced option references files that already exist at known paths on the target."),
+            (self.remote_host, "SSH host", "The login address LabelForge connects to. For JUSUF this is jusuf.fz-juelich.de."),
+            (self.remote_user, "JSC username", "Your account name on JUSUF. It is checked against whoami during the remote preflight."),
+            (self.identity_file, "Private SSH key", "Only this local path is passed to Windows OpenSSH. The key itself and its passphrase are never copied, bundled or committed."),
+            (self.ssh_agent_status, "Windows SSH Agent", "The agent holds the unlocked key in memory. Unlock it once per login session so LabelForge can connect without storing a passphrase."),
+            (self.ssh_setup_button, "Enable and unlock SSH", "Opens a visible administrator PowerShell. It enables Windows SSH Agent and asks for the key passphrase once."),
+            (self.remote_root, "Remote workspace", "A predictable folder on JUSUF used for LabelForge packages, logs and results. The preflight creates it and confirms that it is writable."),
+            (self.remote_environment, "Remote Python environment", "The environment that will eventually run Facemap or DLC on the target. Environment creation is the next implementation step after SSH preflight."),
+            (self.account, "Slurm account", "The compute project charged for the job. The confirmed JUSUF account is training2636."),
+            (self.partition, "Slurm partition", "The compute queue used by the job. Your confirmed association is batch; GPU partitions are not currently authorized."),
+            (self.remote_test_button, "Test remote setup", "Connects safely without transferring data or starting training. It validates the key, user, workspace, Slurm and training2636 / batch association."),
+            (self.validate_button, "Check inputs", "Verifies paths, required fields and safe defaults. Nothing is copied or changed during this step."),
+            (self.generate_button, "Build training package", "Creates the portable recipe containing model references, labels, parameters, launch files and—when selected—the training data."),
+            (self.sync_button, "Transfer package", "Copies the completed package to the tested remote workspace. This unlocks only after the remote preflight succeeds."),
+            (self.start_button, "Start training", "Local runs start directly. HPC runs submit slurm_job.sh with sbatch and store the returned job ID."),
+            (self.status_button, "Monitor the job", "Queries Slurm for the recorded job and shows whether it is queued, running, completed or failed."),
+            (self.fetch_button, "Fetch results", "Copies logs and trained outputs back into the local bundle so the final .pt model can later be registered in the model library."),
+        ]
+        for widget, title, body in topics: self._register_help(widget, title, body)
+        for button in self.findChildren(QPushButton):
+            if button.text().startswith("Browse"):
+                field = button.parentWidget().findChild(QLineEdit)
+                if field in self._help_topics:
+                    title, body = self._help_topics[field]; self._register_help(button, title, body)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if event.type() == QEvent.Enter and watched in self._help_topics and hasattr(self, "help_title"):
+            title, body = self._help_topics[watched]
+            self.help_title.setText(title); self.help_body.setText(body)
+        return super().eventFilter(watched, event)
 
     def _card(self, title: str, text: str) -> tuple[QFrame, QVBoxLayout]:
         card = QFrame(); card.setObjectName("WizardPanel")
@@ -162,13 +217,13 @@ class TrainingWorkspace(QWidget):
         grid = QGridLayout(); grid.setHorizontalSpacing(16)
         self.conda_status = QLabel(); self.facemap_status = QLabel(); self.dlc_status = QLabel()
         for status in [self.conda_status, self.facemap_status, self.dlc_status]: status.setObjectName("SoftwareStatus")
-        fm = QPushButton("Install / repair Facemap"); dlc = QPushButton("Install / repair DeepLabCut")
-        fm.setObjectName("SecondaryActionButton"); dlc.setObjectName("SecondaryActionButton")
-        fm.clicked.connect(lambda: self._install_backend("facemap"))
-        dlc.clicked.connect(lambda: self._install_backend("deeplabcut"))
+        self.fm_install_button = QPushButton("Install / repair Facemap"); self.dlc_install_button = QPushButton("Install / repair DeepLabCut")
+        self.fm_install_button.setObjectName("SecondaryActionButton"); self.dlc_install_button.setObjectName("SecondaryActionButton")
+        self.fm_install_button.clicked.connect(lambda: self._install_backend("facemap"))
+        self.dlc_install_button.clicked.connect(lambda: self._install_backend("deeplabcut"))
         grid.addWidget(QLabel("Conda"), 0, 0); grid.addWidget(self.conda_status, 0, 1)
-        grid.addWidget(QLabel("Facemap"), 1, 0); grid.addWidget(self.facemap_status, 1, 1); grid.addWidget(fm, 1, 2)
-        grid.addWidget(QLabel("DeepLabCut"), 2, 0); grid.addWidget(self.dlc_status, 2, 1); grid.addWidget(dlc, 2, 2)
+        grid.addWidget(QLabel("Facemap"), 1, 0); grid.addWidget(self.facemap_status, 1, 1); grid.addWidget(self.fm_install_button, 1, 2)
+        grid.addWidget(QLabel("DeepLabCut"), 2, 0); grid.addWidget(self.dlc_status, 2, 1); grid.addWidget(self.dlc_install_button, 2, 2)
         grid.setColumnStretch(1, 1); box.addLayout(grid)
         return card
 

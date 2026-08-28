@@ -483,6 +483,37 @@ class MainWindow(QMainWindow):
             QLabel#RailEyebrow { color: #c99a67; font-size: 11px; font-weight: 800; letter-spacing: 1px; }
             QLabel#RailCaption { color: #858d98; font-size: 12px; line-height: 1.3; }
 
+            QLabel#MiniBrand {
+                color: #15171b;
+                background: #d18b47;
+                border: 2px solid #f0b36f;
+                border-radius: 13px;
+                font-size: 20px;
+                font-weight: 900;
+            }
+
+            QFrame#HelpBubble {
+                background: rgba(30, 34, 40, 185);
+                border: 1px solid #3a414b;
+                border-left: 3px solid #d18b47;
+                border-radius: 12px;
+            }
+
+            QLabel#HelpBubbleTitle {
+                color: #f2c18b;
+                font-size: 15px;
+                font-weight: 800;
+                background: transparent;
+                border: none;
+            }
+
+            QLabel#HelpBubbleBody {
+                color: #c4c9d1;
+                font-size: 12px;
+                background: transparent;
+                border: none;
+            }
+
             QLabel#RouteStep {
                 color: #666d77;
                 background: transparent;
