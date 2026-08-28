@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import re
 import subprocess
+import base64
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, QThread, QTimer, Qt, Signal
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QScrollArea,
@@ -66,7 +67,8 @@ class TrainingWorkspace(QWidget):
         outer = QVBoxLayout(self); outer.setContentsMargins(0, 0, 0, 0)
         scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
         body = QWidget(); body_layout = QHBoxLayout(body); body_layout.setContentsMargins(28, 30, 28, 42)
-        content = QWidget(); content.setMaximumWidth(1700)
+        self.left_rail = self._brand_rail(); self.right_rail = self._route_rail()
+        content = QWidget(); content.setMaximumWidth(1260); self._training_content = content
         layout = QVBoxLayout(content); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(16)
         title = QLabel("Training Workspace"); title.setObjectName("PageTitle")
         subtitle = QLabel(
@@ -79,9 +81,47 @@ class TrainingWorkspace(QWidget):
         self.run_card = self._run_card(); self.execution_card = self._execution_card(); self.actions_card = self._actions_card()
         layout.addWidget(self.mode_card); layout.addWidget(self.software_card); layout.addWidget(self.run_card)
         layout.addWidget(self.execution_card); layout.addWidget(self.actions_card)
-        layout.addStretch(1); body_layout.addWidget(content, 1, Qt.AlignHCenter)
+        layout.addStretch(1)
+        body_layout.addWidget(self.left_rail, 0, Qt.AlignTop)
+        body_layout.addWidget(content, 1, Qt.AlignHCenter)
+        body_layout.addWidget(self.right_rail, 0, Qt.AlignTop)
         scroll.setWidget(body); outer.addWidget(scroll)
         self.run_card.setVisible(False); self.execution_card.setVisible(False); self.actions_card.setVisible(False)
+        QTimer.singleShot(0, self._update_side_rails)
+
+    def _brand_rail(self) -> QFrame:
+        rail = QFrame(); rail.setObjectName("SideRail"); rail.setFixedWidth(190)
+        layout = QVBoxLayout(rail); layout.setContentsMargins(20, 24, 20, 24); layout.setSpacing(14)
+        logo = QLabel(); logo.setAlignment(Qt.AlignCenter)
+        logo_path = Path(__file__).resolve().parents[2] / "assets" / "labelforge_icon.png"
+        pixmap = QPixmap(str(logo_path))
+        if not pixmap.isNull(): logo.setPixmap(pixmap.scaled(96, 96, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        name = QLabel("LabelForge"); name.setObjectName("RailTitle"); name.setAlignment(Qt.AlignCenter)
+        caption = QLabel("One model.\nOne reproducible run."); caption.setObjectName("RailCaption")
+        caption.setAlignment(Qt.AlignCenter); caption.setWordWrap(True)
+        layout.addWidget(logo); layout.addWidget(name); layout.addWidget(caption); layout.addStretch(1)
+        return rail
+
+    def _route_rail(self) -> QFrame:
+        rail = QFrame(); rail.setObjectName("SideRail"); rail.setFixedWidth(220)
+        layout = QVBoxLayout(rail); layout.setContentsMargins(20, 24, 20, 24); layout.setSpacing(10)
+        title = QLabel("YOUR TRAINING ROUTE"); title.setObjectName("RailEyebrow"); layout.addWidget(title)
+        self.route_labels = []
+        for text in ["01  Choose goal", "02  Check tools", "03  Add material", "04  Choose computer", "05  Launch run"]:
+            label = QLabel(text); label.setObjectName("RouteStep"); label.setProperty("state", "locked")
+            layout.addWidget(label); self.route_labels.append(label)
+        note = QLabel("Each stage unlocks the next. Nothing is overwritten.")
+        note.setObjectName("RailCaption"); note.setWordWrap(True); layout.addSpacing(8); layout.addWidget(note); layout.addStretch(1)
+        return rail
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event); self._update_side_rails()
+
+    def _update_side_rails(self) -> None:
+        if not hasattr(self, "left_rail"): return
+        wide = self.width() >= 1500
+        self.left_rail.setVisible(wide); self.right_rail.setVisible(wide)
+        self._training_content.setMaximumWidth(1260 if wide else 1650)
 
     def _card(self, title: str, text: str) -> tuple[QFrame, QVBoxLayout]:
         card = QFrame(); card.setObjectName("WizardPanel")
@@ -221,12 +261,14 @@ class TrainingWorkspace(QWidget):
         self.sync_mode.currentIndexChanged.connect(self._sync_mode_changed)
         self.remote_host = self._line("SSH hostname or IP")
         self.remote_user = self._line("SSH username")
+        self.identity_file = self._line("Path to the private SSH key (never copied or stored in a bundle)")
+        self.identity_file.setText(str(Path.home() / ".ssh" / "id_ed25519"))
         self.remote_root = self._line("Remote training workspace")
         self.remote_environment = self._line("Remote Conda environment")
         self.account = self._line("Slurm budget/account"); self.partition = self._line("Slurm partition")
         self.walltime = self._line(); self.walltime.setText("04:00:00")
         resources = QWidget(); row = QHBoxLayout(resources); row.setContentsMargins(0, 0, 0, 0)
-        self.gpus = QSpinBox(); self.gpus.setRange(0, 16); self.gpus.setValue(1)
+        self.gpus = QSpinBox(); self.gpus.setRange(0, 16); self.gpus.setValue(0)
         self.cpus = QSpinBox(); self.cpus.setRange(1, 256); self.cpus.setValue(8)
         self.memory = QSpinBox(); self.memory.setRange(1, 2048); self.memory.setValue(64)
         for label, widget in [("GPUs", self.gpus), ("CPUs", self.cpus), ("RAM GB", self.memory)]:
@@ -238,6 +280,16 @@ class TrainingWorkspace(QWidget):
         self.sync_explanation = QLabel(); self.sync_explanation.setObjectName("TargetExplanation"); self.sync_explanation.setWordWrap(True)
         form.addRow("", self.sync_explanation)
         form.addRow("Host", self.remote_host); form.addRow("Username", self.remote_user)
+        self.identity_control = self._path_row(self.identity_file, False, "SSH private key (id_*);;All files (*)", "Choose the private SSH key used for JUSUF")
+        form.addRow("SSH key", self._with_hint(self.identity_control, "Only the local file path is used. The key and passphrase are never copied into LabelForge or a training package."))
+        self.ssh_agent_status = QLabel(); self.ssh_agent_status.setObjectName("AgentStatus"); self.ssh_agent_status.setWordWrap(True)
+        self.ssh_setup_button = QPushButton("Enable / unlock SSH key…"); self.ssh_setup_button.setObjectName("SecondaryActionButton")
+        self.ssh_refresh_button = QPushButton("Refresh"); self.ssh_refresh_button.setObjectName("SecondaryActionButton")
+        self.ssh_setup_button.clicked.connect(self._open_ssh_setup); self.ssh_refresh_button.clicked.connect(self._refresh_ssh_agent_status)
+        agent_buttons = QHBoxLayout(); agent_buttons.addWidget(self.ssh_setup_button); agent_buttons.addWidget(self.ssh_refresh_button); agent_buttons.addStretch(1)
+        agent_box = QWidget(); agent_layout = QVBoxLayout(agent_box); agent_layout.setContentsMargins(0, 0, 0, 0)
+        agent_layout.addWidget(self.ssh_agent_status); agent_layout.addLayout(agent_buttons)
+        form.addRow("SSH access", agent_box)
         form.addRow("Remote workspace", self.remote_root); form.addRow("Remote environment", self.remote_environment)
         self.account_control = self._with_hint(self.account, "Required for HPC: the project or compute-budget name used by Slurm.")
         form.addRow("Slurm account / budget", self.account_control)
@@ -260,12 +312,13 @@ class TrainingWorkspace(QWidget):
         test_row = QHBoxLayout(); test_row.setAlignment(Qt.AlignTop)
         test_row.addWidget(self.remote_test_button, 0, Qt.AlignTop); test_row.addWidget(self.remote_test_status, 1)
         box.addLayout(test_row)
-        self._remote_fields = [self.sync_mode, self.sync_explanation, self.remote_host, self.remote_user, self.remote_root, self.remote_environment]
+        self._remote_fields = [self.sync_mode, self.sync_explanation, self.remote_host, self.remote_user, self.identity_control, agent_box, self.remote_root, self.remote_environment]
         self._slurm_fields = [self.account, self.partition, self.walltime, self.gpus, self.cpus, self.memory]
-        for field in [self.remote_host, self.remote_user, self.remote_root, self.remote_environment, self.account]:
+        for field in [self.remote_host, self.remote_user, self.identity_file, self.remote_root, self.remote_environment, self.account, self.partition]:
             field.textChanged.connect(self._configuration_changed)
         self._target_changed("Local")
         self._sync_mode_changed()
+        self._refresh_ssh_agent_status()
         return card
 
     def _actions_card(self) -> QFrame:
@@ -419,6 +472,21 @@ class TrainingWorkspace(QWidget):
             color, marker = ("#75c995", "✓") if complete else ("#aeb4bf", "○")
             lines.append(f'<span style="color:{color}; font-weight:600">{marker}&nbsp; {text}</span>')
         self.readiness.setText("&nbsp;&nbsp;&nbsp;&nbsp;".join(lines))
+        self._refresh_route_rail()
+
+    def _refresh_route_rail(self) -> None:
+        if not hasattr(self, "route_labels"): return
+        mode_ready = bool(self._training_mode())
+        material_ready = hasattr(self, "execution_card") and not self.execution_card.isHidden()
+        states = [
+            "complete" if mode_ready else "active",
+            "complete" if self.conda_path else ("active" if mode_ready else "locked"),
+            "complete" if material_ready else ("active" if mode_ready else "locked"),
+            "active" if material_ready else "locked",
+            "active" if hasattr(self, "actions_card") and not self.actions_card.isHidden() else "locked",
+        ]
+        for label, state in zip(self.route_labels, states):
+            label.setProperty("state", state); label.style().unpolish(label); label.style().polish(label)
 
     def _backend_changed(self, backend: str) -> None:
         facemap = backend.lower() == "facemap"
@@ -470,7 +538,9 @@ class TrainingWorkspace(QWidget):
             if not self.remote_host.text(): self.remote_host.setText("jusuf.fz-juelich.de")
             if not self.remote_user.text(): self.remote_user.setText("daubenfeld1")
             if not self.remote_root.text(): self.remote_root.setText("/p/home/jusers/daubenfeld1/jusuf/labelforge-training")
-            if not self.partition.text(): self.partition.setText("gpus")
+            if not self.account.text(): self.account.setText("training2636")
+            if not self.partition.text() or self.partition.text() == "gpus": self.partition.setText("batch")
+            self.gpus.setValue(0)
         if hasattr(self, "sync_button"):
             self.sync_button.setVisible(remote); self.status_button.setVisible(remote); self.fetch_button.setVisible(remote)
             self.sync_button.setText("4  Transfer package")
@@ -498,13 +568,56 @@ class TrainingWorkspace(QWidget):
         self.remote_test_status.setText(f"{marker}  {text}")
         self.remote_test_status.style().unpolish(self.remote_test_status); self.remote_test_status.style().polish(self.remote_test_status)
 
+    def _refresh_ssh_agent_status(self) -> bool:
+        if not hasattr(self, "ssh_agent_status"): return False
+        try:
+            result = subprocess.run(["ssh-add", "-l"], capture_output=True, text=True, timeout=6)
+            output = (result.stdout + result.stderr).strip()
+        except Exception as exc:
+            result = None; output = str(exc)
+        if result and result.returncode == 0:
+            state, text = "ready", "✓  SSH agent ready — an unlocked key is available."
+        elif "No such file" in output or "agent" in output.lower() and "connect" in output.lower():
+            state, text = "failed", "✕  Windows SSH agent is not running. Enable and unlock it before testing JUSUF."
+        else:
+            state, text = "pending", "○  SSH agent is running, but no key is unlocked yet."
+        self.ssh_agent_status.setProperty("state", state); self.ssh_agent_status.setText(text)
+        self.ssh_agent_status.style().unpolish(self.ssh_agent_status); self.ssh_agent_status.style().polish(self.ssh_agent_status)
+        return state == "ready"
+
+    def _open_ssh_setup(self) -> None:
+        if QMessageBox.question(
+            self, "Enable and unlock the SSH key",
+            "Windows will request administrator approval to enable the built-in SSH agent. "
+            "A PowerShell window will then ask for the key passphrase once.\n\n"
+            "The passphrase is kept by Windows SSH Agent for this login session and is never stored by LabelForge."
+        ) != QMessageBox.Yes: return
+        key = self.identity_file.text().strip().replace("'", "''")
+        script = (
+            "$ErrorActionPreference='Stop'; "
+            "Set-Service -Name ssh-agent -StartupType Automatic; Start-Service ssh-agent; "
+            f"Write-Host 'Unlocking SSH key for LabelForge...' -ForegroundColor Cyan; ssh-add '{key}'; "
+            "if ($LASTEXITCODE -eq 0) { Write-Host 'SSH key is ready. Return to LabelForge and click Refresh.' -ForegroundColor Green } "
+            "else { Write-Host 'The key could not be unlocked.' -ForegroundColor Red }; "
+            "Read-Host 'Press Enter to close'"
+        )
+        encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
+        launcher = f"Start-Process powershell.exe -Verb RunAs -ArgumentList '-NoExit','-EncodedCommand','{encoded}'"
+        try:
+            subprocess.Popen(["powershell.exe", "-NoProfile", "-Command", launcher])
+        except Exception as exc:
+            QMessageBox.critical(self, "Could not open SSH setup", str(exc))
+
     def _test_remote(self) -> None:
         profile = self._profile()
-        if not profile.host or not profile.user or not profile.environment:
-            self._set_remote_test_status(False, "Enter host, username and remote environment first")
+        if not profile.host or not profile.user or not profile.identity_file or not profile.root:
+            self._set_remote_test_status(False, "Enter host, username, SSH key and remote workspace first")
+            return
+        if not self._refresh_ssh_agent_status():
+            self._set_remote_test_status(False, "Unlock the SSH key in Windows SSH Agent first")
             return
         self._remote_test_passed = False; self.remote_test_button.setEnabled(False)
-        self._set_remote_test_status(False, "Testing SSH, Conda and training software…")
+        self._set_remote_test_status(False, "Testing SSH key, JUSUF workspace and Slurm association…")
         try: command = preflight_command(profile, self.backend.currentText())
         except Exception as exc:
             self.remote_test_button.setEnabled(True); self._set_remote_test_status(False, str(exc)); return
@@ -528,7 +641,10 @@ class TrainingWorkspace(QWidget):
 
     def _profile(self) -> RemoteProfile:
         c = self._config()
-        return RemoteProfile(c.execution_target, c.remote_host, c.remote_user, c.remote_root, c.remote_environment)
+        return RemoteProfile(
+            c.execution_target, c.remote_host, c.remote_user, c.remote_root, c.remote_environment,
+            self.identity_file.text().strip(), c.slurm_account, c.slurm_partition,
+        )
 
     def _validate(self) -> bool:
         self._normalize_model_name()
@@ -657,7 +773,7 @@ class TrainingWorkspace(QWidget):
             self.log.append(f"{self._operation} complete.")
             if self._operation.startswith("Testing remote"):
                 self._remote_test_passed = True; self.remote_test_button.setEnabled(True)
-                self._set_remote_test_status(True, "SSH, Conda, backend and scheduler are ready")
+                self._set_remote_test_status(True, "JUSUF SSH, workspace, account and partition are ready")
                 self.sync_button.setEnabled(bool(self._last_bundle)); self._set_action_stage(4)
             if self._operation.startswith("Synchronizing"):
                 self.start_button.setEnabled(True); self._set_action_stage(5)
@@ -702,6 +818,14 @@ class TrainingWorkspace(QWidget):
             return "The remote computer could not be reached on SSH port 22. Check VPN, hostname and network access."
         if "permission denied" in value:
             return "SSH authentication failed. LabelForge needs a working SSH key or Windows SSH-agent login for this host."
+        if "ssh key not found" in value:
+            return "The selected SSH key was not found. Choose C:\\Users\\daubenfeld\\.ssh\\id_ed25519 or another valid private key."
+        if "user_mismatch" in value:
+            return "SSH connected, but the remote username does not match the configured JSC username."
+        if "workspace_not_writable" in value:
+            return "SSH works, but the LabelForge workspace could not be created or is not writable."
+        if "association_missing" in value:
+            return "JUSUF is reachable, but the configured Slurm account/partition association was not found. Expected training2636 / batch."
         if "conda_missing" in value:
             return "Conda is not available in the remote non-interactive shell. Add it to the remote shell PATH."
         if "backend_missing" in value:

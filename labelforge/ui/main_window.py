@@ -460,6 +460,40 @@ class MainWindow(QMainWindow):
                 border-color: #315c43;
             }
 
+            QLabel#AgentStatus {
+                color: #aeb4bf;
+                background: #1a1d22;
+                border: 1px solid #3a4049;
+                border-radius: 8px;
+                padding: 9px 12px;
+                font-weight: 600;
+            }
+
+            QLabel#AgentStatus[state="failed"] { color: #e07171; border-color: #5c3439; background: #23191b; }
+            QLabel#AgentStatus[state="pending"] { color: #f0a354; border-color: #6b4b2d; background: #292016; }
+            QLabel#AgentStatus[state="ready"] { color: #75c995; border-color: #315c43; background: #17231c; }
+
+            QFrame#SideRail {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1d2026, stop:1 #17191d);
+                border: 1px solid #2d323a;
+                border-radius: 16px;
+            }
+
+            QLabel#RailTitle { color: #f0a354; font-size: 20px; font-weight: 800; }
+            QLabel#RailEyebrow { color: #c99a67; font-size: 11px; font-weight: 800; letter-spacing: 1px; }
+            QLabel#RailCaption { color: #858d98; font-size: 12px; line-height: 1.3; }
+
+            QLabel#RouteStep {
+                color: #666d77;
+                background: transparent;
+                border-left: 2px solid #343941;
+                padding: 9px 10px;
+                font-weight: 600;
+            }
+
+            QLabel#RouteStep[state="active"] { color: #f0a354; background: #292016; border-left-color: #d18b47; }
+            QLabel#RouteStep[state="complete"] { color: #75c995; border-left-color: #4a9b68; }
+
             QLabel#InlineHint {
                 color: #9097a3;
                 font-size: 11px;
