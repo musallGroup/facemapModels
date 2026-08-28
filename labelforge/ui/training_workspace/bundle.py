@@ -12,6 +12,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class TrainingBundleConfig:
+    training_mode: str
     backend: str
     local_environment: str
     execution_target: str
@@ -49,7 +50,7 @@ def validate_config(config: TrainingBundleConfig) -> list[str]:
     backend = config.backend.lower()
     if backend not in {"facemap", "deeplabcut"}:
         errors.append("Backend must be Facemap or DeepLabCut.")
-    if not Path(config.parent_model).is_file():
+    if config.training_mode != "Create" and not Path(config.parent_model).is_file():
         errors.append("Parent model does not exist.")
     if not Path(config.training_data).exists():
         errors.append("Training data path does not exist.")
@@ -212,13 +213,14 @@ def create_bundle(config: TrainingBundleConfig) -> Path:
     if config.sync_mode == "Copy complete training package":
         payload = bundle / "payload"
         payload.mkdir()
-        parent_target = payload / "parent_model" / Path(config.parent_model).name
-        parent_target.parent.mkdir()
-        shutil.copy2(config.parent_model, parent_target)
+        if config.parent_model:
+            parent_target = payload / "parent_model" / Path(config.parent_model).name
+            parent_target.parent.mkdir()
+            shutil.copy2(config.parent_model, parent_target)
+            manifest["runtime_parent_model"] = str(parent_target.relative_to(bundle)).replace("\\", "/")
         labels_target = payload / "labels_or_config" / Path(config.labels_or_config).name
         labels_target.parent.mkdir()
         shutil.copy2(config.labels_or_config, labels_target)
-        manifest["runtime_parent_model"] = str(parent_target.relative_to(bundle)).replace("\\", "/")
         manifest["runtime_labels_or_config"] = str(labels_target.relative_to(bundle)).replace("\\", "/")
         if config.initialization_video:
             video_target = payload / "initialization_video" / Path(config.initialization_video).name

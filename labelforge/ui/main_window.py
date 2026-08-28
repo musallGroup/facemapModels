@@ -369,6 +369,53 @@ class MainWindow(QMainWindow):
                 background: #343942;
             }
 
+            QPushButton#ModeCard {
+                background: #181b20;
+                color: #eaeaea;
+                border: 1px solid #3a4049;
+                border-radius: 12px;
+                padding: 14px 18px;
+                text-align: left;
+                font-size: 15px;
+                font-weight: 700;
+            }
+
+            QPushButton#ModeCard:hover {
+                background: #22262d;
+                border-color: #8f6640;
+            }
+
+            QPushButton#ModeCard:checked {
+                background: #2a2119;
+                color: #f4c48f;
+                border: 2px solid #d18b47;
+            }
+
+            QPushButton#AdvancedToggle {
+                background: transparent;
+                color: #c9a77f;
+                border: none;
+                padding: 8px 2px;
+                text-align: left;
+                font-weight: 600;
+            }
+
+            QPushButton#AdvancedToggle:hover { color: #f4c48f; }
+
+            QFrame#AdvancedPanel {
+                background: #17191e;
+                border: 1px solid #30353d;
+                border-radius: 9px;
+                padding: 8px;
+            }
+
+            QLabel#ReadinessChecklist {
+                background: #17191e;
+                border: 1px solid #30353d;
+                border-radius: 9px;
+                padding: 13px;
+            }
+
             QPushButton#DangerGhostButton {
                 background: transparent;
                 color: #aeb4bf;

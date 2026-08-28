@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QProcess
 from PySide6.QtWidgets import (
-    QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
+    QButtonGroup, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QScrollArea,
     QSpinBox, QTextEdit, QVBoxLayout, QWidget,
 )
@@ -18,6 +18,7 @@ from .bundle import (
 from .remote import (
     RemoteProfile, fetch_commands, start_command, status_command, sync_commands,
 )
+from .naming import ensure_v1, next_refinement_name
 
 
 class TrainingWorkspace(QWidget):
@@ -46,7 +47,7 @@ class TrainingWorkspace(QWidget):
         )
         subtitle.setObjectName("PageSubtitle"); subtitle.setWordWrap(True)
         layout.addWidget(title); layout.addWidget(subtitle)
-        layout.addWidget(self._software_card()); layout.addWidget(self._run_card())
+        layout.addWidget(self._mode_card()); layout.addWidget(self._software_card()); layout.addWidget(self._run_card())
         layout.addWidget(self._execution_card()); layout.addWidget(self._actions_card())
         layout.addStretch(1); scroll.setWidget(body); outer.addWidget(scroll)
 
@@ -58,9 +59,31 @@ class TrainingWorkspace(QWidget):
         box.addWidget(heading); box.addWidget(hint)
         return card, box
 
+    def _mode_card(self) -> QFrame:
+        card, box = self._card(
+            "1  What do you want to train?",
+            "Choose the goal. LabelForge will suggest the correct new model name and keep the parent untouched.",
+        )
+        row = QHBoxLayout(); row.setSpacing(12)
+        self.mode_group = QButtonGroup(self); self.mode_group.setExclusive(True)
+        choices = [
+            ("Create", "Create\nStart a completely new model"),
+            ("Refine", "Refine\nImprove an existing model"),
+            ("Specialize", "Specialize\nAdapt a model to a new use case"),
+        ]
+        self.mode_buttons: dict[str, QPushButton] = {}
+        for mode, text in choices:
+            button = QPushButton(text); button.setObjectName("ModeCard"); button.setCheckable(True)
+            button.setMinimumHeight(82); self.mode_group.addButton(button); row.addWidget(button, 1)
+            button.clicked.connect(lambda checked=False, value=mode: self._mode_changed(value))
+            self.mode_buttons[mode] = button
+        self.mode_buttons["Refine"].setChecked(True)
+        box.addLayout(row)
+        return card
+
     def _software_card(self) -> QFrame:
         card, box = self._card(
-            "1  Software environments",
+            "2  Software check",
             "LabelForge detects Facemap and DeepLabCut in every Conda environment. Install only when no suitable environment exists.",
         )
         grid = QGridLayout(); grid.setHorizontalSpacing(16)
@@ -89,8 +112,8 @@ class TrainingWorkspace(QWidget):
 
     def _run_card(self) -> QFrame:
         card, box = self._card(
-            "2  Training package",
-            "Choose the promoted parent model and labeled data. The keypoint order remains locked and nothing is overwritten.",
+            "3  Choose the training material",
+            "Add the model and labeled data. LabelForge keeps the keypoint order locked and never overwrites an existing model.",
         )
         form = QFormLayout()
         self.backend = QComboBox(); self.backend.addItems(["Facemap", "DeepLabCut"])
@@ -103,13 +126,22 @@ class TrainingWorkspace(QWidget):
         self.training_script = self._line("Versioned Facemap training adapter")
         self.output_dir = self._line("Where the bundle will be created")
         self.model_name = self._line("e.g. SideView_Face_2P_v2")
-        form.addRow("Backend", self.backend); form.addRow("Local environment", self.local_environment)
-        form.addRow("Parent model", self._path_row(self.parent_model, False, "PyTorch models (*.pt);;All files (*)"))
+        self.parent_label = QLabel("Parent model")
+        self.parent_row = self._path_row(self.parent_model, False, "PyTorch models (*.pt);;All files (*)")
+        form.addRow("Backend", self.backend)
+        form.addRow(self.parent_label, self.parent_row)
         form.addRow("Training data", self._path_row(self.training_data, True))
         form.addRow("Labels / config", self._path_row(self.labels_config, False, "CSV/YAML (*.csv *.yaml *.yml);;All files (*)"))
-        form.addRow("Initialization video", self._path_row(self.init_video, False, "Videos (*.avi *.mp4 *.mkv *.mov);;All files (*)"))
-        form.addRow("Facemap adapter", self._path_row(self.training_script, False, "Python scripts (*.py);;All files (*)"))
         form.addRow("New model name", self.model_name); form.addRow("Bundle location", self._path_row(self.output_dir, True))
+
+        self.advanced_training_button = QPushButton("Advanced training settings  ▸")
+        self.advanced_training_button.setObjectName("AdvancedToggle"); self.advanced_training_button.setCheckable(True)
+        self.advanced_training_button.clicked.connect(self._toggle_training_advanced)
+        self.advanced_training_panel = QFrame(); self.advanced_training_panel.setObjectName("AdvancedPanel")
+        advanced = QFormLayout(self.advanced_training_panel)
+        advanced.addRow("Local environment", self.local_environment)
+        advanced.addRow("Initialization video", self._path_row(self.init_video, False, "Videos (*.avi *.mp4 *.mkv *.mov);;All files (*)"))
+        advanced.addRow("Facemap adapter", self._path_row(self.training_script, False, "Python scripts (*.py);;All files (*)"))
         params = QWidget(); row = QHBoxLayout(params); row.setContentsMargins(0, 0, 0, 0)
         self.epochs = QSpinBox(); self.epochs.setRange(1, 10_000_000); self.epochs.setValue(100)
         self.batch = QSpinBox(); self.batch.setRange(1, 4096); self.batch.setValue(1)
@@ -117,12 +149,19 @@ class TrainingWorkspace(QWidget):
         self.seed = QSpinBox(); self.seed.setRange(0, 2_147_483_647); self.seed.setValue(20260828)
         for label, widget in [("Epochs", self.epochs), ("Batch", self.batch), ("LR", self.lr), ("Seed", self.seed)]:
             row.addWidget(QLabel(label)); row.addWidget(widget)
-        row.addStretch(1); form.addRow("Parameters", params); box.addLayout(form)
+        row.addStretch(1); advanced.addRow("Parameters", params)
+        self.advanced_training_panel.setVisible(False)
+        box.addLayout(form); box.addWidget(self.advanced_training_button); box.addWidget(self.advanced_training_panel)
+        self.parent_model.textChanged.connect(self._parent_changed)
+        self.model_name.editingFinished.connect(self._normalize_model_name)
+        for field in [self.parent_model, self.training_data, self.labels_config, self.output_dir, self.model_name]:
+            field.textChanged.connect(self._update_readiness)
+        self._mode_changed("Refine")
         return card
 
     def _execution_card(self) -> QFrame:
         card, box = self._card(
-            "3  Execution target and synchronization",
+            "4  Where should it run?",
             "Local runs directly. Remote targets use SSH/SCP; HPC additionally submits through Slurm. Passwords and browser tokens are never stored.",
         )
         form = QFormLayout()
@@ -147,8 +186,16 @@ class TrainingWorkspace(QWidget):
         form.addRow("Execution target", self.execution_target); form.addRow("Data strategy", self.sync_mode)
         form.addRow("Host", self.remote_host); form.addRow("Username", self.remote_user)
         form.addRow("Remote workspace", self.remote_root); form.addRow("Remote environment", self.remote_environment)
-        form.addRow("Slurm account", self.account); form.addRow("Partition", self.partition)
-        form.addRow("Walltime", self.walltime); form.addRow("Resources", resources); box.addLayout(form)
+        box.addLayout(form)
+        self.advanced_target_button = QPushButton("Advanced target settings  ▸")
+        self.advanced_target_button.setObjectName("AdvancedToggle"); self.advanced_target_button.setCheckable(True)
+        self.advanced_target_button.clicked.connect(self._toggle_target_advanced)
+        self.advanced_target_panel = QFrame(); self.advanced_target_panel.setObjectName("AdvancedPanel")
+        target_advanced = QFormLayout(self.advanced_target_panel)
+        target_advanced.addRow("Slurm account", self.account); target_advanced.addRow("Partition", self.partition)
+        target_advanced.addRow("Walltime", self.walltime); target_advanced.addRow("Resources", resources)
+        self.advanced_target_panel.setVisible(False)
+        box.addWidget(self.advanced_target_button); box.addWidget(self.advanced_target_panel)
         self._remote_fields = [self.sync_mode, self.remote_host, self.remote_user, self.remote_root, self.remote_environment]
         self._slurm_fields = [self.account, self.partition, self.walltime, self.gpus, self.cpus, self.memory]
         self._target_changed("Local")
@@ -156,9 +203,11 @@ class TrainingWorkspace(QWidget):
 
     def _actions_card(self) -> QFrame:
         card, box = self._card(
-            "4  Prepare, run and retrieve",
+            "5  Ready to train",
             "Validate and generate an immutable bundle. Then run locally or synchronize, start, monitor and retrieve it remotely.",
         )
+        self.readiness = QLabel(); self.readiness.setObjectName("ReadinessChecklist"); self.readiness.setWordWrap(True)
+        box.addWidget(self.readiness)
         first = QHBoxLayout()
         validate = QPushButton("Validate"); generate = QPushButton("Generate bundle")
         validate.setObjectName("SecondaryActionButton"); generate.setObjectName("PrimaryNextButton")
@@ -176,12 +225,72 @@ class TrainingWorkspace(QWidget):
         self.log = QTextEdit(); self.log.setObjectName("TextInput"); self.log.setReadOnly(True)
         self.log.setMaximumHeight(190); self.log.setPlaceholderText("Validation, synchronization and training output appears here.")
         box.addWidget(self.log)
+        self._update_readiness()
         return card
 
     def _browse(self, field: QLineEdit, directory: bool, file_filter: str) -> None:
         if directory: path = QFileDialog.getExistingDirectory(self, "Select folder", field.text())
         else: path, _ = QFileDialog.getOpenFileName(self, "Select file", field.text(), file_filter)
         if path: field.setText(path)
+
+    def _training_mode(self) -> str:
+        for name, button in self.mode_buttons.items():
+            if button.isChecked(): return name
+        return "Refine"
+
+    def _mode_changed(self, mode: str) -> None:
+        needs_parent = mode != "Create"
+        if hasattr(self, "parent_row"):
+            self.parent_row.setVisible(needs_parent); self.parent_label.setVisible(needs_parent)
+        if not hasattr(self, "model_name"): return
+        if mode == "Refine":
+            self.model_name.setReadOnly(True)
+            self.model_name.setPlaceholderText("Suggested automatically from the parent model")
+            self._parent_changed(self.parent_model.text())
+        elif mode == "Specialize":
+            self.model_name.setReadOnly(False)
+            self.model_name.clear(); self.model_name.setPlaceholderText("New specialized model name (version added automatically)")
+        else:
+            self.model_name.setReadOnly(False)
+            self.parent_model.clear(); self.model_name.clear()
+            self.model_name.setPlaceholderText("New model name (version added automatically)")
+        self._update_readiness()
+
+    def _parent_changed(self, parent: str) -> None:
+        if hasattr(self, "mode_buttons") and self._training_mode() == "Refine":
+            self.model_name.setText(next_refinement_name(parent))
+        self._update_readiness()
+
+    def _normalize_model_name(self) -> None:
+        if self._training_mode() != "Refine":
+            self.model_name.setText(ensure_v1(self.model_name.text()))
+
+    def _toggle_training_advanced(self, checked: bool) -> None:
+        self.advanced_training_panel.setVisible(checked)
+        self.advanced_training_button.setText("Advanced training settings  ▾" if checked else "Advanced training settings  ▸")
+
+    def _toggle_target_advanced(self, checked: bool) -> None:
+        self.advanced_target_panel.setVisible(checked)
+        self.advanced_target_button.setText("Advanced target settings  ▾" if checked else "Advanced target settings  ▸")
+
+    def _update_readiness(self, *_args) -> None:
+        if not hasattr(self, "readiness"): return
+        mode = self._training_mode()
+        parent_ok = mode == "Create" or bool(self.parent_model.text().strip())
+        data_ok = bool(self.training_data.text().strip() and self.labels_config.text().strip())
+        name_ok = bool(self.model_name.text().strip())
+        environment_ok = self.execution_target.currentText() != "Local" or self.local_environment.currentText() != "Not installed"
+        items = [
+            (parent_ok, "Starting model selected" if mode != "Create" else "New model selected"),
+            (data_ok, "Training data and labels selected"),
+            (name_ok, "New model name ready"),
+            (environment_ok, "Training environment ready"),
+        ]
+        lines = []
+        for complete, text in items:
+            color, marker = ("#75c995", "✓") if complete else ("#aeb4bf", "○")
+            lines.append(f'<span style="color:{color}; font-weight:600">{marker}&nbsp; {text}</span>')
+        self.readiness.setText("&nbsp;&nbsp;&nbsp;&nbsp;".join(lines))
 
     def _backend_changed(self, backend: str) -> None:
         facemap = backend.lower() == "facemap"
@@ -193,6 +302,7 @@ class TrainingWorkspace(QWidget):
             default = "labelforge-facemap" if facemap else "labelforge-dlc"
             if not self.remote_environment.text() or self.remote_environment.text().startswith("labelforge-"):
                 self.remote_environment.setText(default)
+        self._update_readiness()
 
     def _target_changed(self, target: str) -> None:
         remote = target != "Local"; slurm = target == "HPC (Slurm)"
@@ -205,9 +315,11 @@ class TrainingWorkspace(QWidget):
             if not self.partition.text(): self.partition.setText("gpus")
         if hasattr(self, "sync_button"):
             self.sync_button.setVisible(remote); self.status_button.setVisible(remote); self.fetch_button.setVisible(remote)
+        self._update_readiness()
 
     def _config(self) -> TrainingBundleConfig:
         return TrainingBundleConfig(
+            training_mode=self._training_mode(),
             backend=self.backend.currentText(), local_environment=self.local_environment.currentText(),
             execution_target=self.execution_target.currentText(), sync_mode=self.sync_mode.currentText(),
             parent_model=self.parent_model.text().strip(), training_data=self.training_data.text().strip(),
@@ -226,6 +338,7 @@ class TrainingWorkspace(QWidget):
         return RemoteProfile(c.execution_target, c.remote_host, c.remote_user, c.remote_root, c.remote_environment)
 
     def _validate(self) -> bool:
+        self._normalize_model_name()
         errors = validate_config(self._config())
         if not self.output_dir.text().strip(): errors.append("Bundle location is required.")
         if self.local_environment.currentText() == "Not installed" and self.execution_target.currentText() == "Local":
