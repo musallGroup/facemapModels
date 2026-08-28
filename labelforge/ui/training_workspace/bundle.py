@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,7 @@ from pathlib import Path
 @dataclass(frozen=True)
 class TrainingBundleConfig:
     backend: str
+    local_environment: str
     parent_model: str
     training_data: str
     labels_or_config: str
@@ -202,7 +204,9 @@ def create_bundle(config: TrainingBundleConfig) -> Path:
     if config.backend.lower() == "facemap" and config.training_script:
         shutil.copy2(config.training_script, bundle / "facemap_training_adapter.py")
     (bundle / "slurm_job.sh").write_text(_slurm_text(config), encoding="utf-8", newline="\n")
-    env_name = "labelforge-facemap" if config.backend.lower() == "facemap" else "labelforge-dlc"
+    env_name = config.local_environment or (
+        "labelforge-facemap" if config.backend.lower() == "facemap" else "labelforge-dlc"
+    )
     (bundle / "run_local.bat").write_text(
         f"@echo off\r\nconda run -n {env_name} python training_entry.py\r\n",
         encoding="utf-8",
@@ -227,3 +231,49 @@ def find_conda() -> str | None:
         r"C:\ProgramData\anaconda3\Scripts\conda.exe",
     ]
     return next((path for path in candidates if path and Path(path).is_file()), None)
+
+
+def discover_backend_environments(conda_path: str | None) -> dict[str, list[str]]:
+    found: dict[str, list[str]] = {"facemap": [], "deeplabcut": []}
+    if not conda_path:
+        return found
+    try:
+        result = subprocess.run(
+            [conda_path, "env", "list", "--json"],
+            capture_output=True,
+            text=True,
+            check=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        environments = json.loads(result.stdout).get("envs", [])
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+        return found
+
+    for environment_path in environments:
+        path = Path(environment_path)
+        python = path / ("python.exe" if os.name == "nt" else "bin/python")
+        if not python.is_file():
+            continue
+        try:
+            probe = subprocess.run(
+                [
+                    str(python),
+                    "-c",
+                    "import importlib.util;"
+                    "print(int(importlib.util.find_spec('facemap') is not None),"
+                    "int(importlib.util.find_spec('deeplabcut') is not None))",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            facemap, deeplabcut = probe.stdout.strip().split()[-2:]
+        except (OSError, subprocess.SubprocessError, ValueError):
+            continue
+        name = path.name if path != Path(conda_path).parent.parent else "base"
+        if facemap == "1":
+            found["facemap"].append(name)
+        if deeplabcut == "1":
+            found["deeplabcut"].append(name)
+    return found

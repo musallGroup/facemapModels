@@ -23,13 +23,20 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .bundle import TrainingBundleConfig, create_bundle, find_conda, validate_config
+from .bundle import (
+    TrainingBundleConfig,
+    create_bundle,
+    discover_backend_environments,
+    find_conda,
+    validate_config,
+)
 
 
 class TrainingWorkspace(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.conda_path = find_conda()
+        self.backend_environments: dict[str, list[str]] = {"facemap": [], "deeplabcut": []}
         self.install_process: QProcess | None = None
         self._build_ui()
         self._refresh_software_status()
@@ -133,6 +140,7 @@ class TrainingWorkspace(QWidget):
         self.backend = QComboBox()
         self.backend.addItems(["Facemap", "DeepLabCut"])
         self.backend.currentTextChanged.connect(self._backend_changed)
+        self.local_environment = QComboBox()
         self.parent_model = self._line("Parent .pt model")
         self.training_data = self._line("Image folder or DLC project")
         self.labels_config = self._line("LabelForge labels.csv or DLC config.yaml")
@@ -141,6 +149,7 @@ class TrainingWorkspace(QWidget):
         self.output_dir = self._line("Where the bundle will be created")
         self.model_name = self._line("e.g. SideView_Face_2P_v2")
         form.addRow("Backend", self.backend)
+        form.addRow("Local environment", self.local_environment)
         form.addRow("Parent model", self._path_row(self.parent_model, False, "PyTorch models (*.pt);;All files (*)"))
         form.addRow("Training data", self._path_row(self.training_data, True))
         form.addRow("Labels / config", self._path_row(self.labels_config, False, "CSV/YAML (*.csv *.yaml *.yml);;All files (*)"))
@@ -227,10 +236,16 @@ class TrainingWorkspace(QWidget):
     def _backend_changed(self, backend: str) -> None:
         self.init_video.setEnabled(backend.lower() == "facemap")
         self.training_script.setEnabled(backend.lower() == "facemap")
+        self.local_environment.clear()
+        environments = self.backend_environments.get(backend.lower(), [])
+        self.local_environment.addItems(environments)
+        if not environments:
+            self.local_environment.addItem("Not installed")
 
     def _config(self) -> TrainingBundleConfig:
         return TrainingBundleConfig(
-            backend=self.backend.currentText(), parent_model=self.parent_model.text().strip(),
+            backend=self.backend.currentText(), local_environment=self.local_environment.currentText(),
+            parent_model=self.parent_model.text().strip(),
             training_data=self.training_data.text().strip(), labels_or_config=self.labels_config.text().strip(),
             initialization_video=self.init_video.text().strip(), output_directory=self.output_dir.text().strip(),
             training_script=self.training_script.text().strip(),
@@ -267,9 +282,12 @@ class TrainingWorkspace(QWidget):
             self.facemap_status.setText("Conda required")
             self.dlc_status.setText("Conda required")
             return
-        for name, label in [("labelforge-facemap", self.facemap_status), ("labelforge-dlc", self.dlc_status)]:
-            result = subprocess.run([self.conda_path, "env", "list"], capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
-            label.setText("Installed" if name in result.stdout else "Not installed")
+        self.backend_environments = discover_backend_environments(self.conda_path)
+        facemap = self.backend_environments["facemap"]
+        deeplabcut = self.backend_environments["deeplabcut"]
+        self.facemap_status.setText("Installed: " + ", ".join(facemap) if facemap else "Not installed")
+        self.dlc_status.setText("Installed: " + ", ".join(deeplabcut) if deeplabcut else "Not installed")
+        self._backend_changed(self.backend.currentText())
 
     def _install_backend(self, backend: str) -> None:
         if not self.conda_path:
