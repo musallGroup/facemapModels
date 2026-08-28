@@ -4,12 +4,12 @@ import re
 import subprocess
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, Qt
+from PySide6.QtCore import QObject, QProcess, QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QButtonGroup, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QScrollArea,
-    QSpinBox, QTextEdit, QVBoxLayout, QWidget,
+    QProgressDialog, QSpinBox, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from .bundle import (
@@ -17,7 +17,7 @@ from .bundle import (
     find_conda, validate_config,
 )
 from .remote import (
-    RemoteProfile, fetch_commands, start_command, status_command, sync_commands,
+    RemoteProfile, fetch_commands, preflight_command, start_command, status_command, sync_commands,
 )
 from .naming import ensure_v1, next_refinement_name
 
@@ -32,6 +32,18 @@ class ClearComboBox(QComboBox):
         painter.drawText(self.width() - 29, 0, 28, self.height(), Qt.AlignCenter, "▼")
 
 
+class BundleWorker(QObject):
+    finished = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, config: TrainingBundleConfig) -> None:
+        super().__init__(); self.config = config
+
+    def run(self) -> None:
+        try: self.finished.emit(str(create_bundle(self.config)))
+        except Exception as exc: self.failed.emit(str(exc))
+
+
 class TrainingWorkspace(QWidget):
     def __init__(self) -> None:
         super().__init__()
@@ -44,6 +56,9 @@ class TrainingWorkspace(QWidget):
         self._last_bundle: Path | None = None
         self._last_job_id = ""
         self._validated = False
+        self._remote_test_passed = False
+        self._bundle_thread: QThread | None = None
+        self._bundle_worker: BundleWorker | None = None
         self._build_ui()
         self._refresh_software_status()
 
@@ -51,7 +66,7 @@ class TrainingWorkspace(QWidget):
         outer = QVBoxLayout(self); outer.setContentsMargins(0, 0, 0, 0)
         scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
         body = QWidget(); body_layout = QHBoxLayout(body); body_layout.setContentsMargins(28, 30, 28, 42)
-        content = QWidget(); content.setMaximumWidth(1500)
+        content = QWidget(); content.setMaximumWidth(1700)
         layout = QVBoxLayout(content); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(16)
         title = QLabel("Training Workspace"); title.setObjectName("PageTitle")
         subtitle = QLabel(
@@ -64,7 +79,7 @@ class TrainingWorkspace(QWidget):
         self.run_card = self._run_card(); self.execution_card = self._execution_card(); self.actions_card = self._actions_card()
         layout.addWidget(self.mode_card); layout.addWidget(self.software_card); layout.addWidget(self.run_card)
         layout.addWidget(self.execution_card); layout.addWidget(self.actions_card)
-        layout.addStretch(1); body_layout.addStretch(1); body_layout.addWidget(content, 1); body_layout.addStretch(1)
+        layout.addStretch(1); body_layout.addWidget(content, 1, Qt.AlignHCenter)
         scroll.setWidget(body); outer.addWidget(scroll)
         self.run_card.setVisible(False); self.execution_card.setVisible(False); self.actions_card.setVisible(False)
 
@@ -200,9 +215,10 @@ class TrainingWorkspace(QWidget):
         self.execution_target = ClearComboBox(); self.execution_target.addItems(["Local", "Remote workstation", "HPC (Slurm)"])
         self.execution_target.setMaximumWidth(360)
         self.execution_target.currentTextChanged.connect(self._target_changed)
-        self.sync_mode = ClearComboBox(); self.sync_mode.addItems([
-            "Reuse paths already available on target", "Copy complete training package"
-        ])
+        self.sync_mode = ClearComboBox()
+        self.sync_mode.addItem("Copy everything to the training computer  —  recommended", "Copy complete training package")
+        self.sync_mode.addItem("Files already exist on the training computer  —  advanced", "Reuse paths already available on target")
+        self.sync_mode.currentIndexChanged.connect(self._sync_mode_changed)
         self.remote_host = self._line("SSH hostname or IP")
         self.remote_user = self._line("SSH username")
         self.remote_root = self._line("Remote training workspace")
@@ -218,7 +234,9 @@ class TrainingWorkspace(QWidget):
         row.addStretch(1)
         self.target_explanation = QLabel(); self.target_explanation.setObjectName("TargetExplanation"); self.target_explanation.setWordWrap(True)
         form.addRow("Execution target", self.execution_target); form.addRow("", self.target_explanation)
-        form.addRow("Data strategy", self.sync_mode)
+        form.addRow("How should the training files get there?", self.sync_mode)
+        self.sync_explanation = QLabel(); self.sync_explanation.setObjectName("TargetExplanation"); self.sync_explanation.setWordWrap(True)
+        form.addRow("", self.sync_explanation)
         form.addRow("Host", self.remote_host); form.addRow("Username", self.remote_user)
         form.addRow("Remote workspace", self.remote_root); form.addRow("Remote environment", self.remote_environment)
         self.account_control = self._with_hint(self.account, "Required for HPC: the project or compute-budget name used by Slurm.")
@@ -233,9 +251,17 @@ class TrainingWorkspace(QWidget):
         target_advanced.addRow("Walltime", self.walltime); target_advanced.addRow("Resources", resources)
         self.advanced_target_panel.setVisible(False)
         box.addWidget(self.advanced_target_button); box.addWidget(self.advanced_target_panel)
-        self._remote_fields = [self.sync_mode, self.remote_host, self.remote_user, self.remote_root, self.remote_environment]
+        self.remote_test_button = QPushButton("Test remote setup")
+        self.remote_test_button.setObjectName("PrimaryNextButton"); self.remote_test_button.clicked.connect(self._test_remote)
+        self.remote_test_status = QLabel("○  Not tested yet"); self.remote_test_status.setObjectName("RemoteTestStatus")
+        test_row = QHBoxLayout(); test_row.addWidget(self.remote_test_button); test_row.addWidget(self.remote_test_status, 1)
+        box.addLayout(test_row)
+        self._remote_fields = [self.sync_mode, self.sync_explanation, self.remote_host, self.remote_user, self.remote_root, self.remote_environment]
         self._slurm_fields = [self.account, self.partition, self.walltime, self.gpus, self.cpus, self.memory]
+        for field in [self.remote_host, self.remote_user, self.remote_root, self.remote_environment, self.account]:
+            field.textChanged.connect(self._configuration_changed)
         self._target_changed("Local")
+        self._sync_mode_changed()
         return card
 
     def _actions_card(self) -> QFrame:
@@ -256,8 +282,8 @@ class TrainingWorkspace(QWidget):
         first_help = QLabel("Check inputs first. When everything is valid, package creation unlocks automatically.")
         first_help.setObjectName("InlineHint")
         second = QHBoxLayout()
-        self.sync_button = QPushButton("3  Transfer package"); self.start_button = QPushButton("4  Start training")
-        self.status_button = QPushButton("5  Check status"); self.fetch_button = QPushButton("6  Fetch results")
+        self.sync_button = QPushButton("4  Transfer package"); self.start_button = QPushButton("5  Start training")
+        self.status_button = QPushButton("6  Check status"); self.fetch_button = QPushButton("7  Fetch results")
         for button in [self.sync_button, self.start_button, self.status_button, self.fetch_button]:
             button.setObjectName("SecondaryActionButton"); button.setEnabled(False); second.addWidget(button)
         second.addStretch(1)
@@ -322,6 +348,8 @@ class TrainingWorkspace(QWidget):
     def _configuration_changed(self, *_args) -> None:
         self._validated = False
         self._last_bundle = None
+        self._remote_test_passed = False
+        if hasattr(self, "remote_test_status"): self._set_remote_test_status(False, "Not tested yet")
         if hasattr(self, "generate_button"):
             self.generate_button.setEnabled(False)
             for button in [self.sync_button, self.start_button, self.status_button, self.fetch_button]:
@@ -333,7 +361,7 @@ class TrainingWorkspace(QWidget):
         if not hasattr(self, "action_road"): return
         remote = hasattr(self, "execution_target") and self.execution_target.currentText() != "Local"
         names = ["Check inputs", "Build package"]
-        if remote: names.extend(["Transfer", "Start", "Monitor", "Fetch results"])
+        if remote: names.extend(["Test remote", "Transfer", "Start", "Monitor", "Fetch results"])
         else: names.append("Start")
         parts = []
         for index, name in enumerate(names, 1):
@@ -428,6 +456,8 @@ class TrainingWorkspace(QWidget):
             self.advanced_target_button.setVisible(slurm)
             if not slurm:
                 self.advanced_target_button.setChecked(False); self._toggle_target_advanced(False)
+        if hasattr(self, "remote_test_button"):
+            self.remote_test_button.setVisible(remote); self.remote_test_status.setVisible(remote)
         if slurm:
             if not self.remote_host.text(): self.remote_host.setText("jusuf.fz-juelich.de")
             if not self.remote_user.text(): self.remote_user.setText("daubenfeld1")
@@ -435,16 +465,46 @@ class TrainingWorkspace(QWidget):
             if not self.partition.text(): self.partition.setText("gpus")
         if hasattr(self, "sync_button"):
             self.sync_button.setVisible(remote); self.status_button.setVisible(remote); self.fetch_button.setVisible(remote)
-            self.start_button.setText("4  Start training" if remote else "3  Start training")
-            self.status_button.setText("5  Check status"); self.fetch_button.setText("6  Fetch results")
+            self.sync_button.setText("4  Transfer package")
+            self.start_button.setText("5  Start training" if remote else "3  Start training")
+            self.status_button.setText("6  Check status"); self.fetch_button.setText("7  Fetch results")
             self._configuration_changed()
         self._update_readiness()
+
+    def _sync_mode_changed(self, *_args) -> None:
+        if not hasattr(self, "sync_explanation"): return
+        copy_all = self.sync_mode.currentData() == "Copy complete training package"
+        self.sync_explanation.setText(
+            "Recommended: LabelForge creates one self-contained package and transfers the model, labels and training data. "
+            "This is easiest and safest, but large datasets take longer to copy."
+            if copy_all else
+            "Advanced: no training data is copied. Use this only when the same files already exist on the target computer "
+            "and the remote paths are known and accessible."
+        )
+        self._configuration_changed()
+
+    def _set_remote_test_status(self, passed: bool, text: str) -> None:
+        self.remote_test_status.setProperty("ready", passed)
+        self.remote_test_status.setText(("✓  " if passed else "✕  ") + text if text != "Not tested yet" else "○  Not tested yet")
+        self.remote_test_status.style().unpolish(self.remote_test_status); self.remote_test_status.style().polish(self.remote_test_status)
+
+    def _test_remote(self) -> None:
+        profile = self._profile()
+        if not profile.host or not profile.user or not profile.environment:
+            self._set_remote_test_status(False, "Enter host, username and remote environment first")
+            return
+        self._remote_test_passed = False; self.remote_test_button.setEnabled(False)
+        self._set_remote_test_status(False, "Testing SSH, Conda and training software…")
+        try: command = preflight_command(profile, self.backend.currentText())
+        except Exception as exc:
+            self.remote_test_button.setEnabled(True); self._set_remote_test_status(False, str(exc)); return
+        self._run_commands([command], "Testing remote setup")
 
     def _config(self) -> TrainingBundleConfig:
         return TrainingBundleConfig(
             training_mode=self._training_mode(),
             backend=self.backend.currentText(), local_environment=self.local_environment.currentText(),
-            execution_target=self.execution_target.currentText(), sync_mode=self.sync_mode.currentText(),
+            execution_target=self.execution_target.currentText(), sync_mode=self.sync_mode.currentData(),
             parent_model=self.parent_model.text().strip(), training_data=self.training_data.text().strip(),
             labels_or_config=self.labels_config.text().strip(), initialization_video=self.init_video.text().strip(),
             training_script=self.training_script.text().strip(), output_directory=self.output_dir.text().strip(),
@@ -483,18 +543,64 @@ class TrainingWorkspace(QWidget):
         config = self._config()
         if config.sync_mode == "Copy complete training package":
             size_gb = self._directory_size(Path(config.training_data)) / (1024 ** 3)
-            if QMessageBox.question(
-                self, "Copy training package", f"Training data: approximately {size_gb:.2f} GB.\n\nCreate a self-contained copy?"
-            ) != QMessageBox.Yes: return
-        try: self._last_bundle = create_bundle(config)
-        except Exception as exc:
-            QMessageBox.critical(self, "Could not create bundle", str(exc)); return
-        remote = config.execution_target != "Local"
-        self.sync_button.setEnabled(remote); self.start_button.setEnabled(not remote)
+            dialog = QMessageBox(self)
+            dialog.setIcon(QMessageBox.Question); dialog.setWindowTitle("Build a self-contained training package")
+            dialog.setText("Ready to assemble the training package?")
+            dialog.setInformativeText(
+                f"Training data size: approximately {size_gb:.2f} GB.\n\n"
+                "LabelForge will copy the model, labels and training data into a new portable folder. "
+                "The originals remain unchanged."
+            )
+            dialog.setStandardButtons(QMessageBox.Yes | QMessageBox.No); dialog.setDefaultButton(QMessageBox.Yes)
+            dialog.button(QMessageBox.Yes).setText("Build package"); dialog.button(QMessageBox.No).setText("Not yet")
+            if dialog.exec() != QMessageBox.Yes: return
+        self._start_bundle_worker(config)
+
+    def _start_bundle_worker(self, config: TrainingBundleConfig) -> None:
+        self.generate_button.setEnabled(False); self.validate_button.setEnabled(False)
+        self._bundle_messages = [
+            "Preparing a clean training workspace…",
+            "Locking the model recipe and keypoint order…",
+            "Gathering model, labels and training data…",
+            "Packing the launch files…",
+            "Almost ready for transfer…",
+        ]
+        self._bundle_message_index = 0
+        self._bundle_progress = QProgressDialog(self._bundle_messages[0], "", 0, 0, self)
+        self._bundle_progress.setWindowTitle("Building training package")
+        self._bundle_progress.setCancelButton(None); self._bundle_progress.setWindowModality(Qt.WindowModal)
+        self._bundle_progress.setMinimumDuration(0); self._bundle_progress.setMinimumWidth(470); self._bundle_progress.show()
+        self._bundle_timer = QTimer(self); self._bundle_timer.timeout.connect(self._advance_bundle_message); self._bundle_timer.start(1100)
+        self._bundle_thread = QThread(self); self._bundle_worker = BundleWorker(config)
+        self._bundle_worker.moveToThread(self._bundle_thread)
+        self._bundle_thread.started.connect(self._bundle_worker.run)
+        self._bundle_worker.finished.connect(self._bundle_ready)
+        self._bundle_worker.failed.connect(self._bundle_failed)
+        self._bundle_worker.finished.connect(self._bundle_thread.quit)
+        self._bundle_worker.failed.connect(self._bundle_thread.quit)
+        self._bundle_thread.finished.connect(self._bundle_worker.deleteLater)
+        self._bundle_thread.start()
+
+    def _advance_bundle_message(self) -> None:
+        self._bundle_message_index = (self._bundle_message_index + 1) % len(self._bundle_messages)
+        self._bundle_progress.setLabelText(self._bundle_messages[self._bundle_message_index])
+
+    def _finish_bundle_worker(self) -> None:
+        self._bundle_timer.stop(); self._bundle_progress.close(); self.validate_button.setEnabled(True)
+
+    def _bundle_ready(self, bundle_path: str) -> None:
+        self._finish_bundle_worker(); self._last_bundle = Path(bundle_path)
+        remote = self.execution_target.currentText() != "Local"
+        self.sync_button.setEnabled(remote and self._remote_test_passed); self.start_button.setEnabled(not remote)
         self.status_button.setEnabled(False); self.fetch_button.setEnabled(False)
-        self._set_action_stage(3)
-        next_step = "Transfer the package" if remote else "Start training"
+        self._set_action_stage(4 if remote and self._remote_test_passed else 3)
+        next_step = ("Test the remote setup, then transfer the package" if remote and not self._remote_test_passed else "Transfer the package") if remote else "Start training"
         self.log.append(f"\n✓ Training package created:\n{self._last_bundle}\n\nNext: {next_step}.")
+
+    def _bundle_failed(self, message: str) -> None:
+        self._finish_bundle_worker(); self.generate_button.setEnabled(True)
+        self.log.append(f"\nPackage build stopped: {message}")
+        QMessageBox.critical(self, "Could not build the training package", message)
 
     def _synchronize(self) -> None:
         if not self._last_bundle: return
@@ -537,16 +643,20 @@ class TrainingWorkspace(QWidget):
     def _run_next_command(self) -> None:
         if not self._command_queue:
             self.log.append(f"{self._operation} complete.")
+            if self._operation.startswith("Testing remote"):
+                self._remote_test_passed = True; self.remote_test_button.setEnabled(True)
+                self._set_remote_test_status(True, "SSH, Conda, backend and scheduler are ready")
+                self.sync_button.setEnabled(bool(self._last_bundle)); self._set_action_stage(4)
             if self._operation.startswith("Synchronizing"):
-                self.start_button.setEnabled(True); self._set_action_stage(4)
+                self.start_button.setEnabled(True); self._set_action_stage(5)
             if self._operation.startswith("Starting"):
                 match = re.search(r"Submitted batch job\s+(\d+)", self._command_output)
                 if match: self._last_job_id = match.group(1)
                 if self.execution_target.currentText() == "Local": self._set_action_stage(4)
                 else:
-                    self.status_button.setEnabled(True); self.fetch_button.setEnabled(True); self._set_action_stage(5)
-            if self._operation.startswith("Checking"): self._set_action_stage(6)
-            if self._operation.startswith("Fetching"): self._set_action_stage(7)
+                    self.status_button.setEnabled(True); self.fetch_button.setEnabled(True); self._set_action_stage(6)
+            if self._operation.startswith("Checking"): self._set_action_stage(7)
+            if self._operation.startswith("Fetching"): self._set_action_stage(8)
             return
         command, cwd = self._command_queue.pop(0)
         self._process = QProcess(self); self._process.setProgram(command[0]); self._process.setArguments(command[1:])
@@ -564,8 +674,29 @@ class TrainingWorkspace(QWidget):
     def _command_finished(self, exit_code: int) -> None:
         self._read_process_output()
         if exit_code != 0 and not self._tolerate_failures:
-            self.log.append(f"{self._operation} stopped with exit code {exit_code}."); self._command_queue = []; return
+            friendly = self._friendly_remote_error(self._command_output)
+            self.log.append(f"{self._operation} stopped:\n{friendly}")
+            if self._operation.startswith("Testing remote"):
+                self._remote_test_passed = False; self.remote_test_button.setEnabled(True)
+                self._set_remote_test_status(False, friendly)
+            self._command_queue = []; return
         self._run_next_command()
+
+    def _friendly_remote_error(self, output: str) -> str:
+        value = output.lower()
+        if "message authentication code incorrect" in value or "corrupted mac" in value:
+            return "The secure SSH connection was corrupted. Reconnect the VPN/network, then run 'Test remote setup' again."
+        if "connection timed out" in value or "connect to host" in value:
+            return "The remote computer could not be reached on SSH port 22. Check VPN, hostname and network access."
+        if "permission denied" in value:
+            return "SSH authentication failed. LabelForge needs a working SSH key or Windows SSH-agent login for this host."
+        if "conda_missing" in value:
+            return "Conda is not available in the remote non-interactive shell. Add it to the remote shell PATH."
+        if "backend_missing" in value:
+            return f"{self.backend.currentText()} is not importable in remote environment '{self.remote_environment.text()}'."
+        if "slurm_missing" in value:
+            return "Slurm (sbatch) is not available on this remote computer."
+        return "The command failed. Review the technical output above, correct the remote setup, and retry."
 
     def _refresh_software_status(self) -> None:
         self.conda_status.setText(("✓  Ready: " + self.conda_path) if self.conda_path else "✕  Not found")

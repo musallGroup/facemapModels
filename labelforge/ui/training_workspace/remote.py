@@ -45,6 +45,24 @@ def sync_commands(profile: RemoteProfile, bundle: Path) -> list[list[str]]:
     ]
 
 
+def preflight_command(profile: RemoteProfile, backend: str) -> list[str]:
+    ssh = ssh_executable()
+    if not ssh:
+        raise RuntimeError("Windows OpenSSH (ssh.exe) is required.")
+    environment = quote_remote(profile.environment)
+    module = "facemap" if backend.lower() == "facemap" else "deeplabcut"
+    checks = [
+        "printf 'SSH_OK\\n'",
+        "command -v conda >/dev/null && printf 'CONDA_OK\\n' || { printf 'CONDA_MISSING\\n'; exit 21; }",
+        f"conda run -n {environment} python -c \"import {module}\" && printf 'BACKEND_OK\\n' || {{ printf 'BACKEND_MISSING\\n'; exit 22; }}",
+    ]
+    if profile.target == "HPC (Slurm)":
+        checks.append("command -v sbatch >/dev/null && printf 'SLURM_OK\\n' || { printf 'SLURM_MISSING\\n'; exit 23; }")
+    else:
+        checks.append("command -v nvidia-smi >/dev/null && printf 'GPU_TOOLS_OK\\n' || printf 'GPU_TOOLS_WARNING\\n'")
+    return [ssh, "-o", "BatchMode=yes", "-o", "ConnectTimeout=12", profile.destination, " && ".join(checks)]
+
+
 def start_command(profile: RemoteProfile, bundle: Path) -> list[str]:
     ssh = ssh_executable()
     if not ssh:

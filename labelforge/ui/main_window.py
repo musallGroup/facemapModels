@@ -433,6 +433,14 @@ class MainWindow(QMainWindow):
 
             QLabel#SoftwareStatus[ready="true"] { color: #75c995; }
 
+            QLabel#RemoteTestStatus {
+                color: #e07171;
+                font-weight: 700;
+                padding: 8px 10px;
+            }
+
+            QLabel#RemoteTestStatus[ready="true"] { color: #75c995; }
+
             QLabel#InlineHint {
                 color: #9097a3;
                 font-size: 11px;
@@ -459,6 +467,44 @@ class MainWindow(QMainWindow):
                 border-radius: 10px;
                 padding: 14px 16px;
                 font-size: 13px;
+            }
+
+            QMessageBox,
+            QProgressDialog {
+                background: #1d2026;
+                color: #eaeaea;
+            }
+
+            QMessageBox QLabel,
+            QProgressDialog QLabel {
+                color: #eaeaea;
+                font-size: 13px;
+                min-width: 360px;
+                padding: 8px;
+            }
+
+            QMessageBox QPushButton,
+            QProgressDialog QPushButton {
+                background: #2a2e35;
+                color: #eaeaea;
+                border: 1px solid #4a505a;
+                border-radius: 7px;
+                padding: 8px 16px;
+                min-width: 90px;
+            }
+
+            QMessageBox QPushButton:hover { border-color: #d18b47; }
+
+            QProgressBar {
+                background: #111317;
+                border: 1px solid #3a4049;
+                border-radius: 7px;
+                min-height: 14px;
+            }
+
+            QProgressBar::chunk {
+                background: #d18b47;
+                border-radius: 6px;
             }
 
             QPushButton#DangerGhostButton {
