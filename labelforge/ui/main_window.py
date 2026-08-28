@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 
 from .create_base.workflow import CreateBaseModelWorkflow
 from .refine_model.workflow import RefineModelWorkflow
+from .training_workspace import TrainingWorkspace
 
 
 class MainWindow(QMainWindow):
@@ -337,7 +338,7 @@ class MainWindow(QMainWindow):
             "Model Library — Specialize",
             "Hier wird später ein Basismodell ausgewählt, von dem ein spezialisierter Zweig erstellt wird."
         )
-        self.training_page = self.build_training_page()
+        self.training_page = TrainingWorkspace()
 
         for page in [
             self.home_page,
