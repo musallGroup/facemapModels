@@ -141,8 +141,9 @@ class MainWindow(QMainWindow):
             }
 
             #WizardPanel {
-                background: #1d2026;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #20242a, stop:1 #1d2026);
                 border: 1px solid #2d323a;
+                border-left: 3px solid #6f5034;
                 border-radius: 16px;
             }
 
@@ -197,6 +198,13 @@ class MainWindow(QMainWindow):
 
             QPushButton#PrimaryNextButton:hover {
                 background: #dfa15f;
+            }
+
+            QPushButton#PrimaryNextButton:disabled,
+            QPushButton#SecondaryActionButton:disabled {
+                background: #24282e;
+                color: #666d77;
+                border: 1px solid #30353d;
             }
 
             QPushButton#WizardStepTab {
@@ -364,6 +372,12 @@ class MainWindow(QMainWindow):
                 background: #343942;
             }
 
+            QPushButton#SecondaryActionButton:disabled {
+                background: #24282e;
+                color: #666d77;
+                border: 1px solid #30353d;
+            }
+
             QPushButton#ModeCard {
                 background: #181b20;
                 color: #eaeaea;
@@ -437,6 +451,14 @@ class MainWindow(QMainWindow):
                 border-left: 3px solid #d18b47;
                 border-radius: 5px;
                 padding: 9px 11px;
+            }
+
+            QLabel#ActionRoad {
+                background: #14171b;
+                border: 1px solid #343a43;
+                border-radius: 10px;
+                padding: 14px 16px;
+                font-size: 13px;
             }
 
             QPushButton#DangerGhostButton {
