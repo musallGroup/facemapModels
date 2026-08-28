@@ -14,6 +14,8 @@ from pathlib import Path
 class TrainingBundleConfig:
     backend: str
     local_environment: str
+    execution_target: str
+    sync_mode: str
     parent_model: str
     training_data: str
     labels_or_config: str
@@ -28,6 +30,7 @@ class TrainingBundleConfig:
     remote_host: str
     remote_user: str
     remote_root: str
+    remote_environment: str
     slurm_account: str
     slurm_partition: str
     walltime: str
@@ -62,7 +65,17 @@ def validate_config(config: TrainingBundleConfig) -> list[str]:
         errors.append("Epochs and batch size must be positive.")
     if config.learning_rate <= 0:
         errors.append("Learning rate must be positive.")
-    if not re.fullmatch(r"\d{1,3}:\d{2}:\d{2}", config.walltime):
+    if config.execution_target != "Local" and not config.remote_host.strip():
+        errors.append("A remote host is required for remote execution.")
+    if config.execution_target != "Local" and not config.remote_user.strip():
+        errors.append("A remote username is required for remote execution.")
+    if config.execution_target != "Local" and not config.remote_root.strip():
+        errors.append("A remote workspace is required for remote execution.")
+    if config.execution_target != "Local" and not config.remote_environment.strip():
+        errors.append("A remote Conda environment is required.")
+    if config.execution_target == "HPC (Slurm)" and not config.slurm_account.strip():
+        errors.append("A Slurm account/budget is required for HPC execution.")
+    if config.execution_target == "HPC (Slurm)" and not re.fullmatch(r"\d{1,3}:\d{2}:\d{2}", config.walltime):
         errors.append("Walltime must use HH:MM:SS.")
     return errors
 
@@ -122,7 +135,7 @@ def set_seeds(seed: int) -> None:
 
 def run_dlc() -> None:
     import deeplabcut
-    config_path = CONFIG["labels_or_config"]
+    config_path = CONFIG.get("runtime_labels_or_config", CONFIG["labels_or_config"])
     deeplabcut.train_network(
         config_path,
         shuffle=1,
@@ -156,7 +169,9 @@ if __name__ == "__main__":
 
 
 def _slurm_text(config: TrainingBundleConfig) -> str:
-    environment = "labelforge-facemap" if config.backend.lower() == "facemap" else "labelforge-dlc"
+    environment = config.remote_environment or (
+        "labelforge-facemap" if config.backend.lower() == "facemap" else "labelforge-dlc"
+    )
     account = f"#SBATCH --account={config.slurm_account}\n" if config.slurm_account else ""
     partition = f"#SBATCH --partition={config.slurm_partition}\n" if config.slurm_partition else ""
     gpu = f"#SBATCH --gres=gpu:{config.gpus}\n" if config.gpus else ""
@@ -194,6 +209,31 @@ def create_bundle(config: TrainingBundleConfig) -> Path:
     manifest["created_at"] = datetime.now().isoformat(timespec="seconds")
     manifest["bundle_format"] = 1
     manifest["source_computer"] = os.environ.get("COMPUTERNAME", "unknown")
+    if config.sync_mode == "Copy complete training package":
+        payload = bundle / "payload"
+        payload.mkdir()
+        parent_target = payload / "parent_model" / Path(config.parent_model).name
+        parent_target.parent.mkdir()
+        shutil.copy2(config.parent_model, parent_target)
+        labels_target = payload / "labels_or_config" / Path(config.labels_or_config).name
+        labels_target.parent.mkdir()
+        shutil.copy2(config.labels_or_config, labels_target)
+        manifest["runtime_parent_model"] = str(parent_target.relative_to(bundle)).replace("\\", "/")
+        manifest["runtime_labels_or_config"] = str(labels_target.relative_to(bundle)).replace("\\", "/")
+        if config.initialization_video:
+            video_target = payload / "initialization_video" / Path(config.initialization_video).name
+            video_target.parent.mkdir()
+            shutil.copy2(config.initialization_video, video_target)
+            manifest["runtime_initialization_video"] = str(video_target.relative_to(bundle)).replace("\\", "/")
+        data_source = Path(config.training_data)
+        data_target = payload / "training_data"
+        if data_source.is_dir():
+            shutil.copytree(data_source, data_target)
+        else:
+            data_target.mkdir()
+            shutil.copy2(data_source, data_target / data_source.name)
+        manifest["runtime_training_data"] = str(data_target.relative_to(bundle)).replace("\\", "/")
+
     (bundle / "training_manifest.json").write_text(
         json.dumps(manifest, indent=2), encoding="utf-8"
     )
@@ -216,8 +256,9 @@ def create_bundle(config: TrainingBundleConfig) -> Path:
         "1. Review training_manifest.json.\n"
         "2. Create/update the environment from environment.yml.\n"
         "3. Local: run run_local.bat.\n"
-        "4. JUSUF: transfer this folder, then run sbatch slurm_job.sh.\n"
-        "5. Import the completed model into LabelForge as the next version.\n",
+        "4. Remote workstation: sync the folder and run training_entry.py.\n"
+        "5. HPC: sync the folder and submit slurm_job.sh.\n"
+        "6. Fetch results and import the completed model as the next version.\n",
         encoding="utf-8",
     )
     return bundle
