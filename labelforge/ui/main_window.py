@@ -253,6 +253,54 @@ class MainWindow(QMainWindow):
                 border: 1px solid #d18b47;
             }
 
+            QSpinBox,
+            QDoubleSpinBox {
+                background: #14161a;
+                color: #eaeaea;
+                border: 1px solid #3a4049;
+                border-radius: 7px;
+                padding: 5px 8px;
+                min-height: 22px;
+                selection-background-color: #d18b47;
+                selection-color: #111111;
+            }
+
+            QSpinBox:focus,
+            QDoubleSpinBox:focus {
+                border: 1px solid #d18b47;
+            }
+
+            QSpinBox::up-button,
+            QSpinBox::down-button,
+            QDoubleSpinBox::up-button,
+            QDoubleSpinBox::down-button {
+                background: #2a2e35;
+                border: none;
+                border-left: 1px solid #3a4049;
+                width: 20px;
+            }
+
+            QSpinBox::up-button,
+            QDoubleSpinBox::up-button {
+                border-top-right-radius: 6px;
+            }
+
+            QSpinBox::down-button,
+            QDoubleSpinBox::down-button {
+                border-bottom-right-radius: 6px;
+            }
+
+            QAbstractSpinBox:disabled {
+                background: #1b1e23;
+                color: #737984;
+            }
+
+            QScrollArea,
+            QScrollArea > QWidget,
+            QScrollArea > QWidget > QWidget {
+                background: #14161a;
+            }
+
             QPushButton#SecondaryActionButton {
                 background: #2a2e35;
                 color: #eaeaea;
