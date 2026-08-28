@@ -9,7 +9,7 @@ from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QButtonGroup, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QScrollArea,
-    QProgressDialog, QSpinBox, QTextEdit, QVBoxLayout, QWidget,
+    QProgressDialog, QSizePolicy, QSpinBox, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from .bundle import (
@@ -116,8 +116,8 @@ class TrainingWorkspace(QWidget):
 
     def _software_card(self) -> QFrame:
         card, box = self._card(
-            "2  Software check",
-            "LabelForge detects Facemap and DeepLabCut in every Conda environment. Install only when no suitable environment exists.",
+            "2  Local software check",
+            "Only needed when training on this computer. LabelForge detects Facemap and DeepLabCut in every local Conda environment.",
         )
         grid = QGridLayout(); grid.setHorizontalSpacing(16)
         self.conda_status = QLabel(); self.facemap_status = QLabel(); self.dlc_status = QLabel()
@@ -254,7 +254,11 @@ class TrainingWorkspace(QWidget):
         self.remote_test_button = QPushButton("Test remote setup")
         self.remote_test_button.setObjectName("PrimaryNextButton"); self.remote_test_button.clicked.connect(self._test_remote)
         self.remote_test_status = QLabel("○  Not tested yet"); self.remote_test_status.setObjectName("RemoteTestStatus")
-        test_row = QHBoxLayout(); test_row.addWidget(self.remote_test_button); test_row.addWidget(self.remote_test_status, 1)
+        self.remote_test_status.setProperty("state", "neutral")
+        self.remote_test_status.setWordWrap(True); self.remote_test_status.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.remote_test_status.setMinimumHeight(48)
+        test_row = QHBoxLayout(); test_row.setAlignment(Qt.AlignTop)
+        test_row.addWidget(self.remote_test_button, 0, Qt.AlignTop); test_row.addWidget(self.remote_test_status, 1)
         box.addLayout(test_row)
         self._remote_fields = [self.sync_mode, self.sync_explanation, self.remote_host, self.remote_user, self.remote_root, self.remote_environment]
         self._slurm_fields = [self.account, self.partition, self.walltime, self.gpus, self.cpus, self.memory]
@@ -458,6 +462,10 @@ class TrainingWorkspace(QWidget):
                 self.advanced_target_button.setChecked(False); self._toggle_target_advanced(False)
         if hasattr(self, "remote_test_button"):
             self.remote_test_button.setVisible(remote); self.remote_test_status.setVisible(remote)
+        if hasattr(self, "local_environment"):
+            self.local_environment.setVisible(not remote)
+            local_label = self.training_form.labelForField(self.local_environment)
+            if local_label: local_label.setVisible(not remote)
         if slurm:
             if not self.remote_host.text(): self.remote_host.setText("jusuf.fz-juelich.de")
             if not self.remote_user.text(): self.remote_user.setText("daubenfeld1")
@@ -484,8 +492,10 @@ class TrainingWorkspace(QWidget):
         self._configuration_changed()
 
     def _set_remote_test_status(self, passed: bool, text: str) -> None:
-        self.remote_test_status.setProperty("ready", passed)
-        self.remote_test_status.setText(("✓  " if passed else "✕  ") + text if text != "Not tested yet" else "○  Not tested yet")
+        state = "neutral" if text == "Not tested yet" else ("pending" if text.startswith("Testing") else ("ready" if passed else "failed"))
+        self.remote_test_status.setProperty("state", state)
+        marker = {"neutral": "○", "pending": "●", "ready": "✓", "failed": "✕"}[state]
+        self.remote_test_status.setText(f"{marker}  {text}")
         self.remote_test_status.style().unpolish(self.remote_test_status); self.remote_test_status.style().polish(self.remote_test_status)
 
     def _test_remote(self) -> None:
@@ -553,6 +563,7 @@ class TrainingWorkspace(QWidget):
             )
             dialog.setStandardButtons(QMessageBox.Yes | QMessageBox.No); dialog.setDefaultButton(QMessageBox.Yes)
             dialog.button(QMessageBox.Yes).setText("Build package"); dialog.button(QMessageBox.No).setText("Not yet")
+            dialog.setMinimumSize(580, 230); dialog.resize(620, 250)
             if dialog.exec() != QMessageBox.Yes: return
         self._start_bundle_worker(config)
 
@@ -569,7 +580,8 @@ class TrainingWorkspace(QWidget):
         self._bundle_progress = QProgressDialog(self._bundle_messages[0], "", 0, 0, self)
         self._bundle_progress.setWindowTitle("Building training package")
         self._bundle_progress.setCancelButton(None); self._bundle_progress.setWindowModality(Qt.WindowModal)
-        self._bundle_progress.setMinimumDuration(0); self._bundle_progress.setMinimumWidth(470); self._bundle_progress.show()
+        self._bundle_progress.setMinimumDuration(0); self._bundle_progress.setMinimumSize(580, 180)
+        self._bundle_progress.resize(620, 190); self._bundle_progress.show()
         self._bundle_timer = QTimer(self); self._bundle_timer.timeout.connect(self._advance_bundle_message); self._bundle_timer.start(1100)
         self._bundle_thread = QThread(self); self._bundle_worker = BundleWorker(config)
         self._bundle_worker.moveToThread(self._bundle_thread)

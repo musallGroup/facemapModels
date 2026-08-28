@@ -434,12 +434,31 @@ class MainWindow(QMainWindow):
             QLabel#SoftwareStatus[ready="true"] { color: #75c995; }
 
             QLabel#RemoteTestStatus {
-                color: #e07171;
+                color: #aeb4bf;
                 font-weight: 700;
-                padding: 8px 10px;
+                background: #1a1d22;
+                border: 1px solid #3a4049;
+                border-radius: 8px;
+                padding: 9px 12px;
             }
 
-            QLabel#RemoteTestStatus[ready="true"] { color: #75c995; }
+            QLabel#RemoteTestStatus[state="failed"] {
+                color: #e07171;
+                background: #23191b;
+                border-color: #5c3439;
+            }
+
+            QLabel#RemoteTestStatus[state="pending"] {
+                color: #f0a354;
+                background: #292016;
+                border-color: #6b4b2d;
+            }
+
+            QLabel#RemoteTestStatus[state="ready"] {
+                color: #75c995;
+                background: #17231c;
+                border-color: #315c43;
+            }
 
             QLabel#InlineHint {
                 color: #9097a3;
