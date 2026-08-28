@@ -479,6 +479,13 @@ class MainWindow(QMainWindow):
                 border-radius: 16px;
             }
 
+            QFrame#RouteRail {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #211d19, stop:0.48 #1c2026, stop:1 #17191d);
+                border: 1px solid #59432d;
+                border-top: 3px solid #d18b47;
+                border-radius: 18px;
+            }
+
             QLabel#RailTitle { color: #f0a354; font-size: 20px; font-weight: 800; }
             QLabel#RailEyebrow { color: #c99a67; font-size: 11px; font-weight: 800; letter-spacing: 1px; }
             QLabel#RailCaption { color: #858d98; font-size: 12px; line-height: 1.3; }
@@ -516,14 +523,17 @@ class MainWindow(QMainWindow):
 
             QLabel#RouteStep {
                 color: #666d77;
-                background: transparent;
-                border-left: 2px solid #343941;
-                padding: 9px 10px;
-                font-weight: 600;
+                background: #171a1f;
+                border: 1px solid #30353d;
+                border-left: 4px solid #343941;
+                border-radius: 9px;
+                padding: 13px 12px;
+                font-size: 13px;
+                font-weight: 750;
             }
 
-            QLabel#RouteStep[state="active"] { color: #f0a354; background: #292016; border-left-color: #d18b47; }
-            QLabel#RouteStep[state="complete"] { color: #75c995; border-left-color: #4a9b68; }
+            QLabel#RouteStep[state="active"] { color: #ffd09a; background: #302419; border-color: #704b2b; border-left-color: #e19a50; }
+            QLabel#RouteStep[state="complete"] { color: #86daa5; background: #18251d; border-color: #315b42; border-left-color: #55ad77; }
 
             QLabel#InlineHint {
                 color: #9097a3;

@@ -47,6 +47,19 @@ def ssh_transport_options(profile: RemoteProfile) -> list[str]:
     return ["-m", JUSUF_MAC, "-i", str(identity), "-o", "BatchMode=yes", "-o", "ConnectTimeout=12"]
 
 
+def interactive_ssh_transport_options(profile: RemoteProfile) -> list[str]:
+    """SSH options for the user-attended JUSUF MFA preflight only."""
+    identity = Path(profile.identity_file)
+    if not profile.identity_file or not identity.is_file():
+        raise RuntimeError(f"SSH key not found: {profile.identity_file or 'no key selected'}")
+    return [
+        "-m", JUSUF_MAC, "-i", str(identity),
+        "-o", "BatchMode=no",
+        "-o", "PreferredAuthentications=publickey,keyboard-interactive",
+        "-o", "ConnectTimeout=12",
+    ]
+
+
 def scp_transport_options(profile: RemoteProfile) -> list[str]:
     identity = Path(profile.identity_file)
     if not profile.identity_file or not identity.is_file():
@@ -85,7 +98,7 @@ def preflight_command(profile: RemoteProfile, backend: str = "") -> list[str]:
         )
         checks.append("command -v sbatch >/dev/null && command -v sacctmgr >/dev/null && printf 'SLURM_OK\\n' || { printf 'SLURM_MISSING\\n'; exit 22; }")
         checks.append(f"{association} && printf 'ASSOCIATION_OK\\n' || {{ printf 'ASSOCIATION_MISSING\\n'; exit 23; }}")
-    return [ssh, *ssh_transport_options(profile), profile.destination, " && ".join(checks)]
+    return [ssh, *interactive_ssh_transport_options(profile), profile.destination, " && ".join(checks)]
 
 
 def start_command(profile: RemoteProfile, bundle: Path) -> list[str]:

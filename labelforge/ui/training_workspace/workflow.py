@@ -3,9 +3,10 @@ from __future__ import annotations
 import re
 import subprocess
 import base64
+import sys
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QProcess, QThread, QTimer, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QProcess, QProcessEnvironment, QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QButtonGroup, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
@@ -58,6 +59,7 @@ class TrainingWorkspace(QWidget):
         self._last_job_id = ""
         self._validated = False
         self._remote_test_passed = False
+        self._pending_totp = ""
         self._bundle_thread: QThread | None = None
         self._bundle_worker: BundleWorker | None = None
         self._help_topics: dict[QObject, tuple[str, str]] = {}
@@ -67,6 +69,7 @@ class TrainingWorkspace(QWidget):
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self); outer.setContentsMargins(0, 0, 0, 0)
         scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
+        self._workspace_scroll = scroll
         body = QWidget(); body_layout = QHBoxLayout(body); body_layout.setContentsMargins(28, 30, 28, 42)
         self.left_rail = self._help_rail(); self.right_rail = self._route_rail()
         content = QWidget(); content.setMaximumWidth(1260); self._training_content = content
@@ -87,12 +90,14 @@ class TrainingWorkspace(QWidget):
         body_layout.addWidget(self.left_rail, 0, Qt.AlignTop)
         body_layout.addWidget(content, 1, Qt.AlignHCenter)
         body_layout.addWidget(self.right_rail, 0, Qt.AlignTop)
+        self._workspace_body = body
         scroll.setWidget(body); outer.addWidget(scroll)
+        scroll.verticalScrollBar().valueChanged.connect(self._position_side_rails)
         self.run_card.setVisible(False); self.execution_card.setVisible(False); self.actions_card.setVisible(False)
         QTimer.singleShot(0, self._update_side_rails)
 
     def _help_rail(self) -> QFrame:
-        rail = QFrame(); rail.setObjectName("SideRail"); rail.setFixedWidth(235)
+        rail = QFrame(); rail.setObjectName("SideRail"); rail.setFixedWidth(260)
         layout = QVBoxLayout(rail); layout.setContentsMargins(20, 24, 20, 24); layout.setSpacing(14)
         brand = QLabel("LF"); brand.setObjectName("MiniBrand"); brand.setAlignment(Qt.AlignCenter); brand.setFixedSize(48, 48)
         eyebrow = QLabel("CONTEXT GUIDE"); eyebrow.setObjectName("RailEyebrow")
@@ -101,21 +106,21 @@ class TrainingWorkspace(QWidget):
             "Move the pointer over a field or button. This panel explains what it expects, why it matters, and what happens next."
         )
         self.help_body.setObjectName("HelpBubbleBody"); self.help_body.setWordWrap(True); self.help_body.setAlignment(Qt.AlignTop)
-        bubble = QFrame(); bubble.setObjectName("HelpBubble")
+        bubble = QFrame(); bubble.setObjectName("HelpBubble"); self.help_bubble = bubble
         bubble_layout = QVBoxLayout(bubble); bubble_layout.setContentsMargins(15, 15, 15, 17); bubble_layout.setSpacing(8)
         bubble_layout.addWidget(self.help_title); bubble_layout.addWidget(self.help_body)
-        layout.addWidget(brand, 0, Qt.AlignLeft); layout.addWidget(eyebrow); layout.addWidget(bubble); layout.addStretch(1)
+        layout.addWidget(brand, 0, Qt.AlignLeft); layout.addWidget(eyebrow); layout.addWidget(bubble)
         return rail
 
     def _route_rail(self) -> QFrame:
-        rail = QFrame(); rail.setObjectName("SideRail"); rail.setFixedWidth(220)
-        layout = QVBoxLayout(rail); layout.setContentsMargins(20, 24, 20, 24); layout.setSpacing(10)
+        rail = QFrame(); rail.setObjectName("RouteRail"); rail.setFixedWidth(280)
+        layout = QVBoxLayout(rail); layout.setContentsMargins(22, 26, 22, 26); layout.setSpacing(13)
         title = QLabel("YOUR TRAINING ROUTE"); title.setObjectName("RailEyebrow"); layout.addWidget(title)
         self.route_labels = []
-        for text in ["01  Choose goal", "02  Check tools", "03  Add material", "04  Choose computer", "05  Launch run"]:
+        for text in ["01   CHOOSE GOAL", "02   CHECK TOOLS", "03   ADD MATERIAL", "04   CHOOSE COMPUTER", "05   LAUNCH RUN"]:
             label = QLabel(text); label.setObjectName("RouteStep"); label.setProperty("state", "locked")
             layout.addWidget(label); self.route_labels.append(label)
-        note = QLabel("Each stage unlocks the next. Nothing is overwritten.")
+        note = QLabel("Follow the route from top to bottom. Each completed checkpoint unlocks the next one — your source files stay untouched.")
         note.setObjectName("RailCaption"); note.setWordWrap(True); layout.addSpacing(8); layout.addWidget(note); layout.addStretch(1)
         return rail
 
@@ -127,6 +132,26 @@ class TrainingWorkspace(QWidget):
         wide = self.width() >= 1500
         self.left_rail.setVisible(wide); self.right_rail.setVisible(wide)
         self._training_content.setMaximumWidth(1260 if wide else 1650)
+        QTimer.singleShot(0, self._position_side_rails)
+
+    def _position_side_rails(self, _value: int = 0) -> None:
+        """Keep both guides visible while the central wizard scrolls."""
+        if not hasattr(self, "_workspace_scroll") or not self.left_rail.isVisible(): return
+        scroll_y = self._workspace_scroll.verticalScrollBar().value()
+        maximum_y = max(30, self._workspace_body.height() - max(self.left_rail.height(), self.right_rail.height()) - 42)
+        pinned_y = min(scroll_y + 30, maximum_y)
+        self.left_rail.move(self.left_rail.x(), pinned_y)
+        self.right_rail.move(self.right_rail.x(), pinned_y)
+        self.left_rail.raise_(); self.right_rail.raise_()
+
+    def _resize_help_bubble(self) -> None:
+        """Fit the contextual card to the current explanation without clipping."""
+        if not hasattr(self, "help_bubble"): return
+        text_width = self.left_rail.width() - 70
+        self.help_title.setFixedWidth(text_width); self.help_body.setFixedWidth(text_width)
+        self.help_title.adjustSize(); self.help_body.adjustSize(); self.help_bubble.adjustSize(); self.left_rail.adjustSize()
+        self.left_rail.setFixedWidth(260)
+        self._position_side_rails()
 
     def _register_help(self, widget: QWidget, title: str, body: str) -> None:
         topic = (title, body); self._help_topics[widget] = topic; widget.installEventFilter(self)
@@ -153,6 +178,7 @@ class TrainingWorkspace(QWidget):
             (self.identity_file, "Private SSH key", "Only this local path is passed to Windows OpenSSH. The key itself and its passphrase are never copied, bundled or committed."),
             (self.ssh_agent_status, "Windows SSH Agent", "The agent holds the unlocked key in memory. Unlock it once per login session so LabelForge can connect without storing a passphrase."),
             (self.ssh_setup_button, "Enable and unlock SSH", "Opens a visible administrator PowerShell. It enables Windows SSH Agent and asks for the key passphrase once."),
+            (self.totp_code, "JUSUF verification code", "Enter the current code from Google Authenticator immediately before the remote test. It is masked, used for this one SSH login only, and cleared as soon as the test starts."),
             (self.remote_root, "Remote workspace", "A predictable folder on JUSUF used for LabelForge packages, logs and results. The preflight creates it and confirms that it is writable."),
             (self.remote_environment, "Remote Python environment", "The environment that will eventually run Facemap or DLC on the target. Environment creation is the next implementation step after SSH preflight."),
             (self.account, "Slurm account", "The compute project charged for the job. The confirmed JUSUF account is training2636."),
@@ -176,6 +202,7 @@ class TrainingWorkspace(QWidget):
         if event.type() == QEvent.Enter and watched in self._help_topics and hasattr(self, "help_title"):
             title, body = self._help_topics[watched]
             self.help_title.setText(title); self.help_body.setText(body)
+            QTimer.singleShot(0, self._resize_help_bubble)
         return super().eventFilter(watched, event)
 
     def _card(self, title: str, text: str) -> tuple[QFrame, QVBoxLayout]:
@@ -345,6 +372,12 @@ class TrainingWorkspace(QWidget):
         agent_box = QWidget(); agent_layout = QVBoxLayout(agent_box); agent_layout.setContentsMargins(0, 0, 0, 0)
         agent_layout.addWidget(self.ssh_agent_status); agent_layout.addLayout(agent_buttons)
         form.addRow("SSH access", agent_box)
+        self.totp_code = self._line("Current Google Authenticator code")
+        self.totp_code.setEchoMode(QLineEdit.Password); self.totp_code.setMaxLength(12)
+        self.totp_control = self._with_hint(
+            self.totp_code, "Required only for this connection test. It is never saved, logged or added to the training package."
+        )
+        form.addRow("One-time JUSUF code", self.totp_control)
         form.addRow("Remote workspace", self.remote_root); form.addRow("Remote environment", self.remote_environment)
         self.account_control = self._with_hint(self.account, "Required for HPC: the project or compute-budget name used by Slurm.")
         form.addRow("Slurm account / budget", self.account_control)
@@ -367,7 +400,7 @@ class TrainingWorkspace(QWidget):
         test_row = QHBoxLayout(); test_row.setAlignment(Qt.AlignTop)
         test_row.addWidget(self.remote_test_button, 0, Qt.AlignTop); test_row.addWidget(self.remote_test_status, 1)
         box.addLayout(test_row)
-        self._remote_fields = [self.sync_mode, self.sync_explanation, self.remote_host, self.remote_user, self.identity_control, agent_box, self.remote_root, self.remote_environment]
+        self._remote_fields = [self.sync_mode, self.sync_explanation, self.remote_host, self.remote_user, self.identity_control, agent_box, self.totp_control, self.remote_root, self.remote_environment]
         self._slurm_fields = [self.account, self.partition, self.walltime, self.gpus, self.cpus, self.memory]
         for field in [self.remote_host, self.remote_user, self.identity_file, self.remote_root, self.remote_environment, self.account, self.partition]:
             field.textChanged.connect(self._configuration_changed)
@@ -671,8 +704,13 @@ class TrainingWorkspace(QWidget):
         if not self._refresh_ssh_agent_status():
             self._set_remote_test_status(False, "Unlock the SSH key in Windows SSH Agent first")
             return
+        code = self.totp_code.text().strip()
+        if not code:
+            self._set_remote_test_status(False, "Enter the current JUSUF Google Authenticator code first")
+            self.totp_code.setFocus(); return
+        self._pending_totp = code
         self._remote_test_passed = False; self.remote_test_button.setEnabled(False)
-        self._set_remote_test_status(False, "Testing SSH key, JUSUF workspace and Slurm association…")
+        self._set_remote_test_status(False, "Verifying SSH key and the one-time JUSUF code…")
         try: command = preflight_command(profile, self.backend.currentText())
         except Exception as exc:
             self.remote_test_button.setEnabled(True); self._set_remote_test_status(False, str(exc)); return
@@ -843,10 +881,20 @@ class TrainingWorkspace(QWidget):
             return
         command, cwd = self._command_queue.pop(0)
         self._process = QProcess(self); self._process.setProgram(command[0]); self._process.setArguments(command[1:])
+        if self._operation.startswith("Testing remote"):
+            environment = QProcessEnvironment.systemEnvironment()
+            environment.insert("SSH_ASKPASS", sys.executable)
+            environment.insert("SSH_ASKPASS_REQUIRE", "force")
+            environment.insert("DISPLAY", "LabelForge")
+            environment.insert("LABELFORGE_SSH_ASKPASS", "1")
+            environment.insert("LABELFORGE_TOTP", self._pending_totp)
+            self._process.setProcessEnvironment(environment)
         if cwd: self._process.setWorkingDirectory(cwd)
         self._process.setProcessChannelMode(QProcess.MergedChannels)
         self._process.readyReadStandardOutput.connect(self._read_process_output)
         self._process.finished.connect(self._command_finished); self._process.start()
+        if self._operation.startswith("Testing remote"):
+            self._pending_totp = ""; self.totp_code.clear()
 
     def _read_process_output(self) -> None:
         if not self._process: return
@@ -857,7 +905,13 @@ class TrainingWorkspace(QWidget):
     def _command_finished(self, exit_code: int) -> None:
         self._read_process_output()
         if exit_code != 0 and not self._tolerate_failures:
-            friendly = self._friendly_remote_error(self._command_output)
+            if self._operation.startswith("Testing remote") and not self._command_output.strip():
+                friendly = (
+                    "JUSUF verification was not completed. The SSH key may already be valid; "
+                    "enter a fresh Google Authenticator code in LabelForge and retry."
+                )
+            else:
+                friendly = self._friendly_remote_error(self._command_output)
             self.log.append(f"{self._operation} stopped:\n{friendly}")
             if self._operation.startswith("Testing remote"):
                 self._remote_test_passed = False; self.remote_test_button.setEnabled(True)
@@ -872,7 +926,10 @@ class TrainingWorkspace(QWidget):
         if "connection timed out" in value or "connect to host" in value:
             return "The remote computer could not be reached on SSH port 22. Check VPN, hostname and network access."
         if "permission denied" in value:
-            return "SSH authentication failed. LabelForge needs a working SSH key or Windows SSH-agent login for this host."
+            return (
+                "JUSUF authentication was not completed. The key can be valid even when this appears; "
+                "enter a fresh Google Authenticator code in LabelForge and retry the remote test."
+            )
         if "ssh key not found" in value:
             return "The selected SSH key was not found. Choose C:\\Users\\daubenfeld\\.ssh\\id_ed25519 or another valid private key."
         if "user_mismatch" in value:
