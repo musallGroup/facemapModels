@@ -33,6 +33,10 @@ class ClearComboBox(QComboBox):
         painter.setPen(QColor("#eaeaea") if self.isEnabled() else QColor("#737984"))
         painter.drawText(self.width() - 29, 0, 28, self.height(), Qt.AlignCenter, "▼")
 
+    def wheelEvent(self, event) -> None:
+        """Page scrolling must never change a closed dropdown by accident."""
+        event.ignore()
+
 
 class BundleWorker(QObject):
     finished = Signal(str)
@@ -303,7 +307,9 @@ class TrainingWorkspace(QWidget):
         form.addRow("Save training package in", self._with_hint(package_control, "LabelForge creates a new self-contained folder here. Your original model and labels are not changed."))
         self.init_video_control = self._path_row(self.init_video, False, "Videos (*.avi *.mp4 *.mkv *.mov)", "Choose the Facemap initialization video")
         self.init_video_row = self._with_hint(self.init_video_control, "Required by Facemap to initialize the model (*.avi, *.mp4, *.mkv or *.mov).")
-        form.addRow("Initialization video", self.init_video_row)
+        self.init_video_label = QLabel("Initialization video")
+        form.addRow(self.init_video_label)
+        form.addRow(self.init_video_row)
 
         self.advanced_training_button = QPushButton("Advanced training settings  ▸")
         self.advanced_training_button.setObjectName("AdvancedToggle"); self.advanced_training_button.setCheckable(True)
@@ -584,9 +590,7 @@ class TrainingWorkspace(QWidget):
                 "Image folder (*.png, *.jpg, *.jpeg, *.tif)" if facemap else "DeepLabCut project folder (contains config.yaml)"
             )
             self.labels_config.setPlaceholderText("LabelForge labels (*.csv)" if facemap else "DLC configuration (*.yaml, *.yml)")
-        self.init_video_row.setVisible(facemap); self.training_script.setEnabled(facemap)
-        if self.training_form.labelForField(self.init_video_row):
-            self.training_form.labelForField(self.init_video_row).setVisible(facemap)
+        self.init_video_row.setVisible(facemap); self.init_video_label.setVisible(facemap); self.training_script.setEnabled(facemap)
         self.local_environment.clear()
         environments = self.backend_environments.get(backend.lower(), [])
         self.local_environment.addItems(environments or ["Not installed"])
