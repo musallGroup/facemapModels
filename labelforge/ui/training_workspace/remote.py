@@ -38,6 +38,21 @@ def quote_remote(value: str) -> str:
 
 
 JUSUF_MAC = "hmac-sha2-256-etm@openssh.com"
+JUSUF_FACEMAP_MODULES = "module purge && module load Stages/2025 GCCcore/.13.3.0 PyTorch/2.5.1"
+
+
+def remote_python(profile: RemoteProfile, backend: str = "") -> tuple[str, str]:
+    """Return setup commands and the Python launcher for a remote environment.
+
+    Absolute paths name a venv. Environment names retain the portable Conda
+    behavior used by remote workstations and older LabelForge profiles.
+    """
+    environment = profile.environment.strip()
+    if environment.startswith("/"):
+        python = f"{quote_remote(environment.rstrip('/'))}/bin/python"
+        setup = JUSUF_FACEMAP_MODULES if "juelich.de" in profile.host and backend.lower() == "facemap" else ":"
+        return setup, python
+    return ":", f"conda run -n {quote_remote(environment)} python"
 
 
 def ssh_transport_options(profile: RemoteProfile) -> list[str]:
@@ -111,17 +126,18 @@ def preflight_command(profile: RemoteProfile, backend: str = "") -> list[str]:
         checks.append("command -v sbatch >/dev/null && command -v sacctmgr >/dev/null && printf 'SLURM_OK\\n' || { printf 'SLURM_MISSING\\n'; exit 22; }")
         checks.append(f"{association} && printf 'ASSOCIATION_OK\\n' || {{ printf 'ASSOCIATION_MISSING\\n'; exit 23; }}")
     if profile.environment:
-        environment = quote_remote(profile.environment)
         package = "facemap" if backend.lower() == "facemap" else "deeplabcut"
-        checks.append("command -v conda >/dev/null && printf 'CONDA_OK\\n' || { printf 'CONDA_MISSING\\n'; exit 24; }")
-        checks.append(
-            f"conda env list | awk '{{print $1}}' | grep -Fx {environment} >/dev/null "
-            "&& printf 'ENVIRONMENT_OK\\n' || { printf 'ENVIRONMENT_MISSING\\n'; exit 25; }"
-        )
-        version_probe = (
-            f"conda run -n {environment} python -c \"import importlib.metadata as m; print(m.version('{package}'))\" "
-            "2>/dev/null | tail -n 1"
-        )
+        setup, python = remote_python(profile, backend)
+        if profile.environment.startswith("/"):
+            checks.append(f"test -x {python} && printf 'ENVIRONMENT_OK\\n' || {{ printf 'ENVIRONMENT_MISSING\\n'; exit 25; }}")
+        else:
+            checks.append("command -v conda >/dev/null && printf 'CONDA_OK\\n' || { printf 'CONDA_MISSING\\n'; exit 24; }")
+            environment = quote_remote(profile.environment)
+            checks.append(
+                f"conda env list | awk '{{print $1}}' | grep -Fx {environment} >/dev/null "
+                "&& printf 'ENVIRONMENT_OK\\n' || { printf 'ENVIRONMENT_MISSING\\n'; exit 25; }"
+            )
+        version_probe = f"{setup} && {python} -c \"import importlib.metadata as m; print(m.version('{package}'))\" 2>/dev/null | tail -n 1"
         if package == "facemap":
             checks.append(
                 f"test \"$({version_probe})\" = '1.0.8' && printf 'BACKEND_OK facemap=1.0.8\\n' "
@@ -143,10 +159,10 @@ def start_command(profile: RemoteProfile, bundle: Path) -> list[str]:
     if profile.target == "HPC (Slurm)":
         command = f"cd {remote_bundle} && sbatch slurm_job.sh"
     else:
-        environment = quote_remote(profile.environment)
+        setup, python = remote_python(profile, "facemap")
         command = (
             f"cd {remote_bundle} && mkdir -p logs && "
-            f"nohup conda run -n {environment} python training_entry.py "
+            f"{setup} && nohup {python} training_entry.py "
             f"> logs/remote.out 2> logs/remote.err < /dev/null & echo $!"
         )
     return [ssh, *interactive_ssh_transport_options(profile), profile.destination, command]

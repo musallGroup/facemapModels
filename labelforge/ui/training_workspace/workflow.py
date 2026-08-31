@@ -431,7 +431,7 @@ class TrainingWorkspace(QWidget):
         self.identity_file = self._line("Path to the private SSH key (never copied or stored in a bundle)")
         self.identity_file.setText(str(Path.home() / ".ssh" / "id_ed25519"))
         self.remote_root = self._line("Remote training workspace")
-        self.remote_environment = self._line("Remote Conda environment")
+        self.remote_environment = self._line("Environment name or full venv path")
         self.account = self._line("Slurm budget/account"); self.partition = self._line("Slurm partition")
         self.walltime = self._line(); self.walltime.setText("04:00:00")
         resources = QWidget(); row = QHBoxLayout(resources); row.setContentsMargins(0, 0, 0, 0)
@@ -708,8 +708,14 @@ class TrainingWorkspace(QWidget):
         if slurm:
             if not self.remote_host.text(): self.remote_host.setText("jusuf.fz-juelich.de")
             if not self.remote_user.text(): self.remote_user.setText("daubenfeld1")
-            if not self.remote_root.text(): self.remote_root.setText("/p/home/jusers/daubenfeld1/jusuf/labelforge-training")
+            if not self.remote_root.text() or self.remote_root.text() == "/p/home/jusers/daubenfeld1/jusuf/labelforge-training":
+                self.remote_root.setText("/p/project1/training2636/daubenfeld1/labelforge/training-runs")
             if not self.account.text(): self.account.setText("training2636")
+            if not self.remote_environment.text() or self.remote_environment.text().startswith("labelforge-"):
+                self.remote_environment.setText(
+                    "/p/project1/training2636/daubenfeld1/labelforge/environments/facemap"
+                    if self.backend.currentText().lower() == "facemap" else "labelforge-dlc"
+                )
             if not self.partition.text() or self.partition.text() == "gpus": self.partition.setText("batch")
             self.gpus.setValue(0)
         if hasattr(self, "sync_button"):
@@ -1038,7 +1044,7 @@ class TrainingWorkspace(QWidget):
         if "association_missing" in value:
             return "JUSUF is reachable, but the configured Slurm account/partition association was not found. Expected training2636 / batch."
         if "conda_missing" in value:
-            return "JUSUF is reachable, but Conda is not available in the remote shell. The Facemap environment cannot be checked or started yet."
+            return "The remote profile names a Conda environment, but Conda is not available. For JUSUF, use the full venv path instead."
         if "environment_missing" in value:
             return f"JUSUF is ready, but the remote environment '{self.remote_environment.text()}' does not exist yet. It must be created before training."
         if "backend_version_mismatch" in value:
