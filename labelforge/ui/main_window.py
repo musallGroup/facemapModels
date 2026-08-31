@@ -490,13 +490,12 @@ class MainWindow(QMainWindow):
             QLabel#RailEyebrow { color: #c99a67; font-size: 11px; font-weight: 800; letter-spacing: 1px; }
             QLabel#RailCaption { color: #858d98; font-size: 12px; line-height: 1.3; }
 
-            QLabel#MiniBrand {
-                color: #15171b;
-                background: #d18b47;
-                border: 2px solid #f0b36f;
-                border-radius: 13px;
-                font-size: 20px;
-                font-weight: 900;
+            QLabel#ContextBrand {
+                background: transparent;
+                border: none;
+                font-size: 23px;
+                font-weight: 800;
+                padding: 0;
             }
 
             QFrame#HelpBubble {

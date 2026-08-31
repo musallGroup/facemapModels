@@ -99,7 +99,8 @@ class TrainingWorkspace(QWidget):
     def _help_rail(self) -> QFrame:
         rail = QFrame(); rail.setObjectName("SideRail"); rail.setFixedWidth(260)
         layout = QVBoxLayout(rail); layout.setContentsMargins(20, 24, 20, 24); layout.setSpacing(14)
-        brand = QLabel("LF"); brand.setObjectName("MiniBrand"); brand.setAlignment(Qt.AlignCenter); brand.setFixedSize(48, 48)
+        brand = QLabel('<span style="color:#f1f2f4">Label</span><span style="color:#d9944d">Forge</span>')
+        brand.setObjectName("ContextBrand"); brand.setTextFormat(Qt.RichText)
         eyebrow = QLabel("CONTEXT GUIDE"); eyebrow.setObjectName("RailEyebrow")
         self.help_title = QLabel("Hover over anything"); self.help_title.setObjectName("HelpBubbleTitle"); self.help_title.setWordWrap(True)
         self.help_body = QLabel(
@@ -109,7 +110,7 @@ class TrainingWorkspace(QWidget):
         bubble = QFrame(); bubble.setObjectName("HelpBubble"); self.help_bubble = bubble
         bubble_layout = QVBoxLayout(bubble); bubble_layout.setContentsMargins(15, 15, 15, 17); bubble_layout.setSpacing(8)
         bubble_layout.addWidget(self.help_title); bubble_layout.addWidget(self.help_body)
-        layout.addWidget(brand, 0, Qt.AlignLeft); layout.addWidget(eyebrow); layout.addWidget(bubble)
+        layout.addWidget(brand); layout.addWidget(eyebrow); layout.addWidget(bubble)
         return rail
 
     def _route_rail(self) -> QFrame:
