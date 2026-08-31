@@ -14,6 +14,17 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+# Transitive scientific packages can expose ICU/API-set DLLs that Windows
+# loads before Qt's matching runtime. Excluding these copies prevents the
+# QtCore "specified procedure could not be found" startup failure.
+_qt_conflicts = {
+    'icudt78.dll',
+    'icuuc.dll',
+    'api-ms-win-core-fibers-l1-1-1.dll',
+    'api-ms-win-core-kernel32-legacy-l1-1-1.dll',
+    'api-ms-win-core-sysinfo-l1-2-0.dll',
+}
+a.binaries = [item for item in a.binaries if item[0].lower() not in _qt_conflicts]
 pyz = PYZ(a.pure)
 
 exe = EXE(
