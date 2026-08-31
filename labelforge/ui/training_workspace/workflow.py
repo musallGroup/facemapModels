@@ -87,7 +87,6 @@ class TrainingWorkspace(QWidget):
         layout.addWidget(title); layout.addWidget(subtitle)
         self.mode_card = self._mode_card(); self.software_card = self._software_card()
         self.run_card = self._run_card(); self.execution_card = self._execution_card(); self.actions_card = self._actions_card()
-        self._setup_context_help()
         layout.addWidget(self.mode_card); layout.addWidget(self.software_card); layout.addWidget(self.run_card)
         layout.addWidget(self.execution_card); layout.addWidget(self.actions_card)
         layout.addStretch(1)
@@ -96,6 +95,7 @@ class TrainingWorkspace(QWidget):
         body_layout.addWidget(self.right_rail, 0, Qt.AlignTop)
         self._workspace_body = body
         scroll.setWidget(body); outer.addWidget(scroll)
+        self._setup_context_help()
         scroll.verticalScrollBar().valueChanged.connect(self._position_side_rails)
         self.run_card.setVisible(False); self.execution_card.setVisible(False); self.actions_card.setVisible(False)
         QTimer.singleShot(0, self._update_side_rails)
@@ -154,14 +154,23 @@ class TrainingWorkspace(QWidget):
         if not hasattr(self, "help_bubble"): return
         text_width = self.left_rail.width() - 70
         self.help_title.setFixedWidth(text_width); self.help_body.setFixedWidth(text_width)
-        self.help_title.adjustSize(); self.help_body.adjustSize(); self.help_bubble.adjustSize(); self.left_rail.adjustSize()
-        self.left_rail.setFixedWidth(260)
+        title_height = max(self.help_title.sizeHint().height(), self.help_title.heightForWidth(text_width))
+        body_height = max(self.help_body.sizeHint().height(), self.help_body.heightForWidth(text_width))
+        self.help_title.setFixedHeight(title_height + 2)
+        self.help_body.setFixedHeight(body_height + 4)
+        self.help_bubble.setFixedHeight(15 + title_height + 2 + 8 + body_height + 4 + 17)
+        self.help_bubble.layout().activate(); self.left_rail.layout().activate()
+        self.left_rail.setFixedSize(260, self.left_rail.sizeHint().height())
         self._position_side_rails()
 
     def _register_help(self, widget: QWidget, title: str, body: str) -> None:
-        topic = (title, body); self._help_topics[widget] = topic; widget.installEventFilter(self)
+        topic = (title, body); self._help_topics[widget] = topic
+        widget.setProperty("contextHelpTitle", title); widget.setProperty("contextHelpBody", body)
+        widget.setMouseTracking(True); widget.installEventFilter(self)
         for child in widget.findChildren(QWidget):
-            self._help_topics[child] = topic; child.installEventFilter(self)
+            self._help_topics[child] = topic
+            child.setProperty("contextHelpTitle", title); child.setProperty("contextHelpBody", body)
+            child.setMouseTracking(True); child.installEventFilter(self)
 
     def _setup_context_help(self) -> None:
         topics = [
@@ -170,12 +179,20 @@ class TrainingWorkspace(QWidget):
             (self.mode_buttons["Specialize"], "Specialize a model", "Adapt a proven parent model to a cohort, setup or task. The new model keeps a link to its source but receives its own family name."),
             (self.backend, "Training backend", "Choose the software that understands the model. Facemap preserves genuine Facemap .pt compatibility; DeepLabCut expects a DLC project and config.yaml."),
             (self.local_environment, "Local Python environment", "Only relevant for training on this computer. It must contain the selected backend. It disappears automatically for remote or HPC runs."),
+            (self.fm_install_button, "Install or repair Facemap", "Creates or repairs a local Conda environment containing Facemap. This is only needed when training on this computer."),
+            (self.dlc_install_button, "Install or repair DeepLabCut", "Creates or repairs a local Conda environment containing DeepLabCut. Remote and HPC installations are handled on the target computer."),
             (self.parent_model, "Parent model", "The existing .pt model used as the starting point for Refine or Specialize. It is read-only and will never be overwritten."),
             (self.training_data, "Training images or project", "Facemap expects the folder containing labeled training images. DeepLabCut expects the project folder containing config.yaml."),
             (self.labels_config, "Labels and keypoints", "Facemap uses the LabelForge labels.csv; DLC uses config.yaml. Keypoint order and individually missing keypoints must remain intact."),
             (self.model_name, "New model name", "This is the identity of the output model. Refine proposes the next version automatically; Create and Specialize add _v1 when needed."),
             (self.output_dir, "Local package location", "LabelForge creates a reproducible staging folder here. For remote runs this package is later transferred to the training computer."),
             (self.init_video, "Facemap initialization video", "Facemap uses this video to initialize the model. It is required for Facemap whether training runs locally or on JUSUF."),
+            (self.advanced_training_button, "Advanced training settings", "Opens optional expert controls. The normal workflow already provides safe defaults, so beginners can leave this section closed."),
+            (self.training_script, "Facemap training adapter", "Optional versioned Python adapter that defines a custom Facemap training call. Leave it empty to use the standard LabelForge adapter."),
+            (self.epochs, "Training epochs", "Maximum number of complete training passes. Higher values can improve convergence but take longer; the default is intended as a safe starting point."),
+            (self.batch, "Batch size", "Number of samples processed together. Larger batches need more memory. Keep the default unless the backend or hardware requires a change."),
+            (self.lr, "Learning rate", "Controls how strongly the model updates each step. This is an expert setting; an unsuitable value can prevent useful learning."),
+            (self.seed, "Random seed", "Makes data sampling and initialization reproducible so the same package can be investigated or repeated later."),
             (self.execution_target, "Where training runs", "Local uses this computer. Remote workstation uses SSH directly. HPC submits a Slurm job so heavy training runs on a compute node, never the login node."),
             (self.sync_mode, "How files reach the target", "The recommended option copies one self-contained package. The advanced option references files that already exist at known paths on the target."),
             (self.remote_host, "SSH host", "The login address LabelForge connects to. For JUSUF this is jusuf.fz-juelich.de."),
@@ -183,11 +200,17 @@ class TrainingWorkspace(QWidget):
             (self.identity_file, "Private SSH key", "Only this local path is passed to Windows OpenSSH. The key itself and its passphrase are never copied, bundled or committed."),
             (self.ssh_agent_status, "Windows SSH Agent", "The agent holds the unlocked key in memory. Unlock it once per login session so LabelForge can connect without storing a passphrase."),
             (self.ssh_setup_button, "Enable and unlock SSH", "Opens a visible administrator PowerShell. It enables Windows SSH Agent and asks for the key passphrase once."),
+            (self.ssh_refresh_button, "Refresh SSH status", "Checks the Windows SSH Agent again after a key was added or unlocked. It does not connect to JUSUF."),
             (self.totp_code, "JUSUF verification code", "Enter the current code from Google Authenticator immediately before the remote test. It is masked, used for this one SSH login only, and cleared as soon as the test starts."),
             (self.remote_root, "Remote workspace", "A predictable folder on JUSUF used for LabelForge packages, logs and results. The preflight creates it and confirms that it is writable."),
             (self.remote_environment, "Remote Python environment", "The environment that will eventually run Facemap or DLC on the target. Environment creation is the next implementation step after SSH preflight."),
             (self.account, "Slurm account", "The compute project charged for the job. The confirmed JUSUF account is training2636."),
             (self.partition, "Slurm partition", "The compute queue used by the job. Your confirmed association is batch; GPU partitions are not currently authorized."),
+            (self.advanced_target_button, "Advanced target settings", "Shows optional Slurm timing and resource controls. Required account information remains visible outside this section."),
+            (self.walltime, "Maximum run time", "The Slurm time limit in hours, minutes and seconds. JUSUF stops the job if it exceeds this value."),
+            (self.gpus, "Requested GPUs", "Number of GPUs requested from Slurm. Your currently confirmed JUSUF batch setup uses zero GPUs."),
+            (self.cpus, "Requested CPU cores", "CPU cores reserved for the training job. More cores only help when the training backend can use them."),
+            (self.memory, "Requested memory", "RAM reserved for the Slurm job in gigabytes. Request enough for the dataset without unnecessarily blocking cluster resources."),
             (self.remote_test_button, "Test remote setup", "Connects safely without transferring data or starting training. It validates the key, user, workspace, Slurm and training2636 / batch association."),
             (self.validate_button, "Check inputs", "Verifies paths, required fields and safe defaults. Nothing is copied or changed during this step."),
             (self.generate_button, "Build training package", "Creates the portable recipe containing model references, labels, parameters, launch files and—when selected—the training data."),
@@ -198,14 +221,35 @@ class TrainingWorkspace(QWidget):
         ]
         for widget, title, body in topics: self._register_help(widget, title, body)
         for button in self.findChildren(QPushButton):
-            if button.text().startswith("Browse"):
+            if button.objectName() == "BrowseButton":
                 field = button.parentWidget().findChild(QLineEdit)
-                if field in self._help_topics:
-                    title, body = self._help_topics[field]; self._register_help(button, title, body)
+                if field and field.property("contextHelpTitle"):
+                    self._register_help(button, field.property("contextHelpTitle"), field.property("contextHelpBody"))
+                else:
+                    self._register_help(button, "Choose a file or folder", "Opens a picker with the expected file type shown in its title and filter.")
+
+        # Guarantee full coverage even when a new control is added later. The
+        # specific topics above win; these fallbacks keep every interactive
+        # surface explainable from its first build onward.
+        interactive = (QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPushButton)
+        for control_type in interactive:
+            for widget in self.findChildren(control_type):
+                if widget.property("contextHelpTitle"): continue
+                if isinstance(widget, QLineEdit):
+                    title = widget.placeholderText() or "Input field"
+                    body = "Enter the requested value here. The surrounding step validates it before LabelForge unlocks the next action."
+                elif isinstance(widget, QComboBox):
+                    title, body = "Choose an option", "Click the dropdown and select one option deliberately. Scrolling the page cannot change this value."
+                elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
+                    title, body = "Numeric setting", "Enter a value or use the step buttons. This setting is validated before the training package is created."
+                else:
+                    title = widget.text().replace("…", "").strip() or "Action"
+                    body = "Click to perform this action. LabelForge keeps source models and labels unchanged unless the description explicitly says otherwise."
+                self._register_help(widget, title, body)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        if event.type() == QEvent.Enter and watched in self._help_topics and hasattr(self, "help_title"):
-            title, body = self._help_topics[watched]
+        if event.type() in (QEvent.Enter, QEvent.HoverEnter, QEvent.MouseMove) and watched.property("contextHelpTitle") and hasattr(self, "help_title"):
+            title, body = watched.property("contextHelpTitle"), watched.property("contextHelpBody")
             self.help_title.setText(title); self.help_body.setText(body)
             QTimer.singleShot(0, self._resize_help_bubble)
         return super().eventFilter(watched, event)
