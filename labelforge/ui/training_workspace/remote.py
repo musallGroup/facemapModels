@@ -110,6 +110,28 @@ def preflight_command(profile: RemoteProfile, backend: str = "") -> list[str]:
         )
         checks.append("command -v sbatch >/dev/null && command -v sacctmgr >/dev/null && printf 'SLURM_OK\\n' || { printf 'SLURM_MISSING\\n'; exit 22; }")
         checks.append(f"{association} && printf 'ASSOCIATION_OK\\n' || {{ printf 'ASSOCIATION_MISSING\\n'; exit 23; }}")
+    if profile.environment:
+        environment = quote_remote(profile.environment)
+        package = "facemap" if backend.lower() == "facemap" else "deeplabcut"
+        checks.append("command -v conda >/dev/null && printf 'CONDA_OK\\n' || { printf 'CONDA_MISSING\\n'; exit 24; }")
+        checks.append(
+            f"conda env list | awk '{{print $1}}' | grep -Fx {environment} >/dev/null "
+            "&& printf 'ENVIRONMENT_OK\\n' || { printf 'ENVIRONMENT_MISSING\\n'; exit 25; }"
+        )
+        version_probe = (
+            f"conda run -n {environment} python -c \"import importlib.metadata as m; print(m.version('{package}'))\" "
+            "2>/dev/null | tail -n 1"
+        )
+        if package == "facemap":
+            checks.append(
+                f"test \"$({version_probe})\" = '1.0.8' && printf 'BACKEND_OK facemap=1.0.8\\n' "
+                f"|| {{ printf 'BACKEND_VERSION_MISMATCH %s\\n' \"$({version_probe})\"; exit 26; }}"
+            )
+        else:
+            checks.append(
+                f"test -n \"$({version_probe})\" && printf 'BACKEND_OK deeplabcut\\n' "
+                "|| { printf 'BACKEND_MISSING\\n'; exit 26; }"
+            )
     return [ssh, *interactive_ssh_transport_options(profile), profile.destination, " && ".join(checks)]
 
 
@@ -127,7 +149,7 @@ def start_command(profile: RemoteProfile, bundle: Path) -> list[str]:
             f"nohup conda run -n {environment} python training_entry.py "
             f"> logs/remote.out 2> logs/remote.err < /dev/null & echo $!"
         )
-    return [ssh, *ssh_transport_options(profile), profile.destination, command]
+    return [ssh, *interactive_ssh_transport_options(profile), profile.destination, command]
 
 
 def status_command(profile: RemoteProfile, job_id: str = "") -> list[str]:

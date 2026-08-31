@@ -924,6 +924,11 @@ class TrainingWorkspace(QWidget):
             command = [self.conda_path or "conda", "run", "-n", self.local_environment.currentText(), "python", "training_entry.py"]
             self._run_commands([command], "Running training locally", str(self._last_bundle))
         else:
+            code = self.totp_code.text().strip()
+            if not code:
+                self.log.append("\nStarting on JUSUF needs a fresh Google Authenticator code. Enter it above, then click Start training again.")
+                self.totp_code.setFocus(); return
+            self._pending_totp = code
             try: command = start_command(self._profile(), self._last_bundle)
             except Exception as exc:
                 QMessageBox.critical(self, "Cannot start training", str(exc)); return
@@ -969,7 +974,7 @@ class TrainingWorkspace(QWidget):
             return
         command, cwd = self._command_queue.pop(0)
         self._process = QProcess(self); self._process.setProgram(command[0]); self._process.setArguments(command[1:])
-        if self._operation.startswith(("Testing remote", "Synchronizing")):
+        if self._operation.startswith(("Testing remote", "Synchronizing", "Starting remote")):
             environment = QProcessEnvironment.systemEnvironment()
             askpass = Path(sys.executable).with_name("LabelForgeAskpass.exe")
             if not askpass.is_file():
@@ -987,7 +992,7 @@ class TrainingWorkspace(QWidget):
         self._process.setProcessChannelMode(QProcess.MergedChannels)
         self._process.readyReadStandardOutput.connect(self._read_process_output)
         self._process.finished.connect(self._command_finished); self._process.start()
-        if self._operation.startswith(("Testing remote", "Synchronizing")):
+        if self._operation.startswith(("Testing remote", "Synchronizing", "Starting remote")):
             self._pending_totp = ""; self.totp_code.clear()
 
     def _read_process_output(self) -> None:
@@ -1033,7 +1038,11 @@ class TrainingWorkspace(QWidget):
         if "association_missing" in value:
             return "JUSUF is reachable, but the configured Slurm account/partition association was not found. Expected training2636 / batch."
         if "conda_missing" in value:
-            return "Conda is not available in the remote non-interactive shell. Add it to the remote shell PATH."
+            return "JUSUF is reachable, but Conda is not available in the remote shell. The Facemap environment cannot be checked or started yet."
+        if "environment_missing" in value:
+            return f"JUSUF is ready, but the remote environment '{self.remote_environment.text()}' does not exist yet. It must be created before training."
+        if "backend_version_mismatch" in value:
+            return f"The remote environment exists, but it does not contain the required Facemap 1.0.8 version."
         if "backend_missing" in value:
             return f"{self.backend.currentText()} is not importable in remote environment '{self.remote_environment.text()}'."
         if "slurm_missing" in value:
