@@ -10,7 +10,7 @@ from PySide6.QtCore import QEvent, QObject, QProcess, QProcessEnvironment, QRect
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QButtonGroup, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
-    QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QScrollArea,
+    QHBoxLayout, QLabel, QLayout, QLineEdit, QMessageBox, QPushButton, QScrollArea,
     QProgressDialog, QSizePolicy, QSpinBox, QTextEdit, QVBoxLayout, QWidget,
 )
 
@@ -26,6 +26,9 @@ from .naming import ensure_v1, next_refinement_name
 
 class ClearComboBox(QComboBox):
     """Theme-independent combo box with an unmistakable dropdown marker."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent); self.setMinimumHeight(44)
 
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
@@ -315,20 +318,22 @@ class TrainingWorkspace(QWidget):
 
     def _line(self, placeholder: str = "") -> QLineEdit:
         field = QLineEdit(); field.setObjectName("TextInput"); field.setPlaceholderText(placeholder)
-        field.setMinimumHeight(40); field.textChanged.connect(field.setToolTip)
+        field.setMinimumHeight(44); field.textChanged.connect(field.setToolTip)
         return field
 
     def _path_row(self, field: QLineEdit, directory: bool = False, file_filter: str = "All files (*)", title: str = "Select file") -> QWidget:
-        row = QWidget(); layout = QHBoxLayout(row); layout.setContentsMargins(0, 0, 0, 0)
+        row = QWidget(); row.setMinimumHeight(44)
+        layout = QHBoxLayout(row); layout.setContentsMargins(0, 0, 0, 0); layout.setSizeConstraint(QLayout.SetMinimumSize)
         layout.addWidget(field, 1)
         button = QPushButton("Browse…"); button.setObjectName("BrowseButton")
-        button.setMinimumHeight(40)
+        button.setMinimumHeight(44)
         button.clicked.connect(lambda: self._browse(field, directory, file_filter, title))
         layout.addWidget(button)
         return row
 
     def _with_hint(self, control: QWidget, text: str) -> QWidget:
         wrapper = QWidget(); layout = QVBoxLayout(wrapper); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(3)
+        layout.setSizeConstraint(QLayout.SetMinimumSize)
         layout.addWidget(control)
         hint = QLabel(text); hint.setObjectName("InlineHint"); hint.setWordWrap(True); layout.addWidget(hint)
         return wrapper
@@ -360,7 +365,7 @@ class TrainingWorkspace(QWidget):
         form.addRow("Labels / config", self._with_hint(labels_control, "Facemap: LabelForge labels file (*.csv).  DeepLabCut: project configuration (*.yaml or *.yml)."))
         form.addRow("New model name", self.model_name)
         package_control = self._path_row(self.output_dir, True, title="Choose where the new training package should be saved")
-        package_wrapper = QWidget(); package_layout = QVBoxLayout(package_wrapper); package_layout.setContentsMargins(0, 0, 0, 0); package_layout.setSpacing(3)
+        package_wrapper = QWidget(); package_layout = QVBoxLayout(package_wrapper); package_layout.setContentsMargins(0, 0, 0, 0); package_layout.setSpacing(3); package_layout.setSizeConstraint(QLayout.SetMinimumSize)
         package_layout.addWidget(package_control)
         self.bundle_destination_hint = QLabel("Choose a folder and model name to preview the exact package location.")
         self.bundle_destination_hint.setObjectName("InlineHint"); self.bundle_destination_hint.setWordWrap(True)
