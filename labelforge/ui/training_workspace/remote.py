@@ -67,15 +67,27 @@ def scp_transport_options(profile: RemoteProfile) -> list[str]:
     return ["-o", f"MACs={JUSUF_MAC}", "-i", str(identity), "-o", "BatchMode=yes", "-o", "ConnectTimeout=12"]
 
 
+def interactive_scp_transport_options(profile: RemoteProfile) -> list[str]:
+    """SCP options for one user-authorized transfer with a fresh JUSUF TOTP."""
+    identity = Path(profile.identity_file)
+    if not profile.identity_file or not identity.is_file():
+        raise RuntimeError(f"SSH key not found: {profile.identity_file or 'no key selected'}")
+    return [
+        "-o", f"MACs={JUSUF_MAC}", "-i", str(identity),
+        "-o", "BatchMode=no",
+        "-o", "PreferredAuthentications=publickey,keyboard-interactive",
+        "-o", "ConnectTimeout=12",
+    ]
+
+
 def sync_commands(profile: RemoteProfile, bundle: Path) -> list[list[str]]:
     ssh = ssh_executable()
     scp = scp_executable()
     if not ssh or not scp:
         raise RuntimeError("Windows OpenSSH (ssh.exe and scp.exe) is required.")
-    return [
-        [ssh, *ssh_transport_options(profile), profile.destination, f"mkdir -p {quote_remote(profile.root)}"],
-        [scp, *scp_transport_options(profile), "-r", str(bundle), f"{profile.destination}:{profile.root.rstrip('/')}/"],
-    ]
+    # The preflight already created and validated profile.root. Keeping the
+    # transfer to one SCP connection means JUSUF asks for MFA exactly once.
+    return [[scp, *interactive_scp_transport_options(profile), "-r", str(bundle), f"{profile.destination}:{profile.root.rstrip('/')}/"]]
 
 
 def preflight_command(profile: RemoteProfile, backend: str = "") -> list[str]:

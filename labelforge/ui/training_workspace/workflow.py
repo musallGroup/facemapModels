@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 
 from .bundle import (
     TrainingBundleConfig, create_bundle, discover_backend_environments,
-    find_conda, validate_config,
+    find_conda, safe_name, validate_config,
 )
 from .remote import (
     RemoteProfile, fetch_commands, preflight_command, start_command, status_command, sync_commands,
@@ -315,12 +315,14 @@ class TrainingWorkspace(QWidget):
 
     def _line(self, placeholder: str = "") -> QLineEdit:
         field = QLineEdit(); field.setObjectName("TextInput"); field.setPlaceholderText(placeholder)
+        field.setMinimumHeight(40); field.textChanged.connect(field.setToolTip)
         return field
 
     def _path_row(self, field: QLineEdit, directory: bool = False, file_filter: str = "All files (*)", title: str = "Select file") -> QWidget:
         row = QWidget(); layout = QHBoxLayout(row); layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(field, 1)
         button = QPushButton("Browse…"); button.setObjectName("BrowseButton")
+        button.setMinimumHeight(40)
         button.clicked.connect(lambda: self._browse(field, directory, file_filter, title))
         layout.addWidget(button)
         return row
@@ -358,7 +360,12 @@ class TrainingWorkspace(QWidget):
         form.addRow("Labels / config", self._with_hint(labels_control, "Facemap: LabelForge labels file (*.csv).  DeepLabCut: project configuration (*.yaml or *.yml)."))
         form.addRow("New model name", self.model_name)
         package_control = self._path_row(self.output_dir, True, title="Choose where the new training package should be saved")
-        form.addRow("Save training package in", self._with_hint(package_control, "LabelForge creates a new self-contained folder here. Your original model and labels are not changed."))
+        package_wrapper = QWidget(); package_layout = QVBoxLayout(package_wrapper); package_layout.setContentsMargins(0, 0, 0, 0); package_layout.setSpacing(3)
+        package_layout.addWidget(package_control)
+        self.bundle_destination_hint = QLabel("Choose a folder and model name to preview the exact package location.")
+        self.bundle_destination_hint.setObjectName("InlineHint"); self.bundle_destination_hint.setWordWrap(True)
+        package_layout.addWidget(self.bundle_destination_hint)
+        form.addRow("Save training package in", package_wrapper)
         self.init_video_control = self._path_row(self.init_video, False, "Videos (*.avi *.mp4 *.mkv *.mov)", "Choose the Facemap initialization video")
         self.init_video_row = self._with_hint(self.init_video_control, "Required by Facemap to initialize the model (*.avi, *.mp4, *.mkv or *.mov).")
         self.init_video_label = QLabel("Initialization video")
@@ -385,9 +392,21 @@ class TrainingWorkspace(QWidget):
         self.material_prompt.setObjectName("StepPrompt"); box.addWidget(self.material_prompt)
         self.parent_model.textChanged.connect(self._parent_changed)
         self.model_name.editingFinished.connect(self._normalize_model_name)
+        self.model_name.textChanged.connect(self._update_bundle_destination)
+        self.output_dir.textChanged.connect(self._update_bundle_destination)
         for field in [self.parent_model, self.training_data, self.labels_config, self.output_dir, self.model_name, self.init_video]:
             field.textChanged.connect(self._configuration_changed)
         return card
+
+    def _update_bundle_destination(self, *_args) -> None:
+        if not hasattr(self, "bundle_destination_hint"): return
+        root, model = self.output_dir.text().strip(), self.model_name.text().strip()
+        if root and model:
+            destination = Path(root).expanduser() / f"{safe_name(model)}_training_bundle"
+            self.bundle_destination_hint.setText(f"Package will be created here:  {destination}")
+            self.bundle_destination_hint.setToolTip(str(destination))
+        else:
+            self.bundle_destination_hint.setText("Choose a folder and model name to preview the exact package location.")
 
     def _execution_card(self) -> QFrame:
         card, box = self._card(
@@ -708,8 +727,8 @@ class TrainingWorkspace(QWidget):
         )
         self._configuration_changed()
 
-    def _set_remote_test_status(self, passed: bool, text: str) -> None:
-        state = "neutral" if text == "Not tested yet" else ("pending" if text.startswith("Testing") else ("ready" if passed else "failed"))
+    def _set_remote_test_status(self, passed: bool, text: str, state: str | None = None) -> None:
+        state = state or ("neutral" if text == "Not tested yet" else ("ready" if passed else "failed"))
         self.remote_test_status.setProperty("state", state)
         marker = {"neutral": "○", "pending": "●", "ready": "✓", "failed": "✕"}[state]
         self.remote_test_status.setText(f"{marker}  {text}")
@@ -769,7 +788,7 @@ class TrainingWorkspace(QWidget):
             self.totp_code.setFocus(); return
         self._pending_totp = code
         self._remote_test_passed = False; self.remote_test_button.setEnabled(False)
-        self._set_remote_test_status(False, "Verifying SSH key and the one-time JUSUF code…")
+        self._set_remote_test_status(False, "Verifying SSH key and the one-time JUSUF code…", "pending")
         try: command = preflight_command(profile, self.backend.currentText())
         except Exception as exc:
             self.remote_test_button.setEnabled(True); self._set_remote_test_status(False, str(exc)); return
@@ -827,7 +846,7 @@ class TrainingWorkspace(QWidget):
             dialog.setInformativeText(
                 f"Training data size: approximately {size_gb:.2f} GB.\n\n"
                 "LabelForge will copy the model, labels and training data into a new portable folder. "
-                "The originals remain unchanged."
+                f"The originals remain unchanged.\n\nPackage location:\n{Path(config.output_directory).expanduser() / (safe_name(config.model_name) + '_training_bundle')}"
             )
             dialog.setStandardButtons(QMessageBox.Yes | QMessageBox.No); dialog.setDefaultButton(QMessageBox.Yes)
             dialog.button(QMessageBox.Yes).setText("Build package"); dialog.button(QMessageBox.No).setText("Not yet")
@@ -884,6 +903,11 @@ class TrainingWorkspace(QWidget):
 
     def _synchronize(self) -> None:
         if not self._last_bundle: return
+        code = self.totp_code.text().strip()
+        if not code:
+            self.log.append("\nTransfer needs a fresh JUSUF Google Authenticator code. Enter it above, then click Transfer package again.")
+            self.totp_code.setFocus(); return
+        self._pending_totp = code
         try: commands = sync_commands(self._profile(), self._last_bundle)
         except Exception as exc:
             QMessageBox.critical(self, "Cannot synchronize", str(exc)); return
@@ -940,7 +964,7 @@ class TrainingWorkspace(QWidget):
             return
         command, cwd = self._command_queue.pop(0)
         self._process = QProcess(self); self._process.setProgram(command[0]); self._process.setArguments(command[1:])
-        if self._operation.startswith("Testing remote"):
+        if self._operation.startswith(("Testing remote", "Synchronizing")):
             environment = QProcessEnvironment.systemEnvironment()
             askpass = Path(sys.executable).with_name("LabelForgeAskpass.exe")
             if not askpass.is_file():
@@ -958,7 +982,7 @@ class TrainingWorkspace(QWidget):
         self._process.setProcessChannelMode(QProcess.MergedChannels)
         self._process.readyReadStandardOutput.connect(self._read_process_output)
         self._process.finished.connect(self._command_finished); self._process.start()
-        if self._operation.startswith("Testing remote"):
+        if self._operation.startswith(("Testing remote", "Synchronizing")):
             self._pending_totp = ""; self.totp_code.clear()
 
     def _read_process_output(self) -> None:
