@@ -6,7 +6,7 @@ import base64
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QProcess, QProcessEnvironment, QThread, QTimer, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QProcess, QProcessEnvironment, QRect, QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QButtonGroup, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
@@ -106,7 +106,7 @@ class TrainingWorkspace(QWidget):
         brand = QLabel('<span style="color:#f1f2f4">Label</span><span style="color:#d9944d">Forge</span>')
         brand.setObjectName("ContextBrand"); brand.setTextFormat(Qt.RichText)
         eyebrow = QLabel("CONTEXT GUIDE"); eyebrow.setObjectName("RailEyebrow")
-        self.help_title = QLabel("Hover over anything"); self.help_title.setObjectName("HelpBubbleTitle"); self.help_title.setWordWrap(True)
+        self.help_title = QLabel("Hover over anything"); self.help_title.setObjectName("HelpBubbleTitle"); self.help_title.setWordWrap(True); self.help_title.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.help_body = QLabel(
             "Move the pointer over a field or button. This panel explains what it expects, why it matters, and what happens next."
         )
@@ -154,13 +154,23 @@ class TrainingWorkspace(QWidget):
         if not hasattr(self, "help_bubble"): return
         text_width = self.left_rail.width() - 70
         self.help_title.setFixedWidth(text_width); self.help_body.setFixedWidth(text_width)
-        title_height = max(self.help_title.sizeHint().height(), self.help_title.heightForWidth(text_width))
-        body_height = max(self.help_body.sizeHint().height(), self.help_body.heightForWidth(text_width))
+        flags = int(Qt.TextWordWrap | Qt.AlignLeft | Qt.AlignTop)
+        title_height = self.help_title.fontMetrics().boundingRect(QRect(0, 0, text_width, 10_000), flags, self.help_title.text()).height()
+        body_height = self.help_body.fontMetrics().boundingRect(QRect(0, 0, text_width, 10_000), flags, self.help_body.text()).height()
         self.help_title.setFixedHeight(title_height + 2)
         self.help_body.setFixedHeight(body_height + 4)
-        self.help_bubble.setFixedHeight(15 + title_height + 2 + 8 + body_height + 4 + 17)
+        bubble_height = 15 + title_height + 2 + 8 + body_height + 4 + 17
+        self.help_bubble.setFixedHeight(bubble_height)
         self.help_bubble.layout().activate(); self.left_rail.layout().activate()
-        self.left_rail.setFixedSize(260, self.left_rail.sizeHint().height())
+        rail_layout = self.left_rail.layout()
+        rail_height = (
+            rail_layout.contentsMargins().top() + rail_layout.contentsMargins().bottom()
+            + rail_layout.spacing() * 2
+            + rail_layout.itemAt(0).widget().sizeHint().height()
+            + rail_layout.itemAt(1).widget().sizeHint().height()
+            + bubble_height
+        )
+        self.left_rail.setFixedSize(260, rail_height)
         self._position_side_rails()
 
     def _register_help(self, widget: QWidget, title: str, body: str) -> None:
