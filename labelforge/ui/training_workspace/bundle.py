@@ -39,7 +39,11 @@ class TrainingBundleConfig:
     gpus: int
     cpus: int
     memory_gb: int
-
+    qc_enabled: bool = True
+    qc_video: str = ""
+    qc_focus_label: str = ""
+    qc_duration_seconds: int = 60
+    qc_zoom_context: float = 1.0
 
 def safe_name(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", value.strip()).strip("._")
@@ -61,6 +65,8 @@ def validate_config(config: TrainingBundleConfig) -> list[str]:
         errors.append("Facemap requires an initialization video.")
     if backend == "facemap" and config.training_script and not Path(config.training_script).is_file():
         errors.append("The selected Facemap training adapter does not exist.")
+    if backend == "facemap" and config.qc_enabled and config.qc_video and not Path(config.qc_video).is_file():
+        errors.append("The selected QC video does not exist.")
     if not config.model_name.strip():
         errors.append("A new model name is required.")
     if config.epochs < 1 or config.batch_size < 1:
@@ -159,7 +165,17 @@ def run_facemap() -> None:
         )
     namespace = {"TRAINING_MANIFEST": CONFIG, "__name__": "__main__"}
     exec(compile(script.read_text(encoding="utf-8"), str(script), "exec"), namespace)
-
+    if CONFIG.get("qc_enabled", True):
+        try:
+            qc = ROOT / "facemap_qc.py"
+            if not qc.is_file():
+                raise RuntimeError("The Facemap QC runner is missing from this package.")
+            exec(compile(qc.read_text(encoding="utf-8"), str(qc), "exec"), {"__name__": "__main__"})
+        except Exception as exc:
+            failure = ROOT / "results" / "qc" / "QC_FAILED.txt"
+            failure.parent.mkdir(parents=True, exist_ok=True)
+            failure.write_text(str(exc), encoding="utf-8")
+            print(f"Training completed, but QC preview failed: {exc}")
 
 if __name__ == "__main__":
     set_seeds(int(CONFIG["random_seed"]))
@@ -236,6 +252,11 @@ def create_bundle(config: TrainingBundleConfig) -> Path:
             video_target.parent.mkdir()
             shutil.copy2(config.initialization_video, video_target)
             manifest["runtime_initialization_video"] = str(video_target.relative_to(bundle)).replace("\\", "/")
+        if config.qc_video:
+            qc_video_target = payload / "qc_video" / Path(config.qc_video).name
+            qc_video_target.parent.mkdir()
+            shutil.copy2(config.qc_video, qc_video_target)
+            manifest["runtime_qc_video"] = str(qc_video_target.relative_to(bundle)).replace("\\", "/")
         data_source = Path(config.training_data)
         data_target = payload / "training_data"
         if data_source.is_dir():
@@ -252,8 +273,15 @@ def create_bundle(config: TrainingBundleConfig) -> Path:
         _environment_text(config.backend), encoding="utf-8"
     )
     (bundle / "training_entry.py").write_text(_runner_text(), encoding="utf-8")
-    if config.backend.lower() == "facemap" and config.training_script:
-        shutil.copy2(config.training_script, bundle / "facemap_training_adapter.py")
+    if config.backend.lower() == "facemap":
+        adapter = Path(config.training_script) if config.training_script else Path(__file__).with_name("facemap_training_adapter.py")
+        if not adapter.is_file():
+            raise FileNotFoundError("The built-in Facemap training adapter is missing.")
+        shutil.copy2(adapter, bundle / "facemap_training_adapter.py")
+        qc_runner = Path(__file__).with_name("facemap_qc.py")
+        if not qc_runner.is_file():
+            raise FileNotFoundError("The built-in Facemap QC runner is missing.")
+        shutil.copy2(qc_runner, bundle / "facemap_qc.py")
     (bundle / "slurm_job.sh").write_text(_slurm_text(config), encoding="utf-8", newline="\n")
     env_name = config.local_environment or (
         "labelforge-facemap" if config.backend.lower() == "facemap" else "labelforge-dlc"

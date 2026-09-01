@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import base64
@@ -9,7 +10,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QObject, QProcess, QProcessEnvironment, QRect, QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
-    QButtonGroup, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
+    QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QLayout, QLineEdit, QMessageBox, QPushButton, QScrollArea,
     QProgressDialog, QSizePolicy, QSpinBox, QTextEdit, QVBoxLayout, QWidget,
 )
@@ -200,6 +201,11 @@ class TrainingWorkspace(QWidget):
             (self.model_name, "New model name", "This is the identity of the output model. Refine proposes the next version automatically; Create and Specialize add _v1 when needed."),
             (self.output_dir, "Local package location", "LabelForge creates a reproducible staging folder here. For remote runs this package is later transferred to the training computer."),
             (self.init_video, "Facemap initialization video", "Facemap uses this video to initialize the model. It is required for Facemap whether training runs locally or on JUSUF."),
+            (self.qc_enabled, "Automatic visual QC", "Creates a short result video after training: the full frame plus a focused zoom panel with the predicted keypoints. It is fetched together with the model and logs."),
+            (self.qc_video, "QC source video", "Optional video used to test the newly trained model. Leave it empty to reuse the Facemap initialization video."),
+            (self.qc_focus_label, "QC focus keypoint", "The zoom panel follows this keypoint. Leave it empty and LabelForge automatically prefers pupil, eye, tongue, nose or mouth labels."),
+            (self.qc_duration, "QC preview length", "Choose 30–120 seconds. Sixty seconds is usually long enough to spot drift, swaps or poor confidence without producing a huge result file."),
+            (self.qc_zoom, "QC zoom context", "Balanced is close to the established iris QC. More context shows surrounding anatomy; closer detail magnifies the selected keypoint."),
             (self.advanced_training_button, "Advanced training settings", "Opens optional expert controls. The normal workflow already provides safe defaults, so beginners can leave this section closed."),
             (self.training_script, "Facemap training adapter", "Optional versioned Python adapter that defines a custom Facemap training call. Leave it empty to use the standard LabelForge adapter."),
             (self.epochs, "Training epochs", "Maximum number of complete training passes. Higher values can improve convergence but take longer; the default is intended as a safe starting point."),
@@ -351,6 +357,12 @@ class TrainingWorkspace(QWidget):
         self.training_data = self._line("FM: image folder  •  DLC: project folder")
         self.labels_config = self._line("FM: labels.csv  •  DLC: config.yaml")
         self.init_video = self._line("Facemap initialization video")
+        self.qc_enabled = QCheckBox("Create a short visual quality-check preview after training")
+        self.qc_enabled.setChecked(True)
+        self.qc_video = self._line("Optional QC video; initialization video is used if empty")
+        self.qc_focus_label = self._line("Optional focus keypoint, e.g. pupil_top")
+        self.qc_duration = QSpinBox(); self.qc_duration.setRange(30, 120); self.qc_duration.setValue(60); self.qc_duration.setSuffix(" seconds")
+        self.qc_zoom = ClearComboBox(); self.qc_zoom.addItem("Balanced context  —  recommended", 1.0); self.qc_zoom.addItem("More surrounding context", 1.4); self.qc_zoom.addItem("Closer detail", 0.75)
         self.training_script = self._line("Versioned Facemap training adapter")
         self.output_dir = self._line("Folder in which LabelForge should save the training package")
         self.model_name = self._line("e.g. SideView_Face_2P_v2")
@@ -377,6 +389,12 @@ class TrainingWorkspace(QWidget):
         form.addRow(self.init_video_label)
         form.addRow(self.init_video_row)
 
+        form.addRow("Visual QC", self.qc_enabled)
+        qc_video_control = self._path_row(self.qc_video, False, "Videos (*.avi *.mp4 *.mkv *.mov)", "Choose the video for the post-training QC preview")
+        form.addRow("QC video", self._with_hint(qc_video_control, "Optional. If empty, LabelForge uses the initialization video. The selected 30–120 second segment is only used for prediction and visual checking."))
+        qc_options = QWidget(); qc_row = QHBoxLayout(qc_options); qc_row.setContentsMargins(0, 0, 0, 0); qc_row.addWidget(QLabel("Focus")); qc_row.addWidget(self.qc_focus_label, 2); qc_row.addWidget(QLabel("Length")); qc_row.addWidget(self.qc_duration); qc_row.addWidget(QLabel("Zoom")); qc_row.addWidget(self.qc_zoom, 2)
+        form.addRow("QC preview options", qc_options)
+
         self.advanced_training_button = QPushButton("Advanced training settings  ▸")
         self.advanced_training_button.setObjectName("AdvancedToggle"); self.advanced_training_button.setCheckable(True)
         self.advanced_training_button.clicked.connect(self._toggle_training_advanced)
@@ -399,7 +417,7 @@ class TrainingWorkspace(QWidget):
         self.model_name.editingFinished.connect(self._normalize_model_name)
         self.model_name.textChanged.connect(self._update_bundle_destination)
         self.output_dir.textChanged.connect(self._update_bundle_destination)
-        for field in [self.parent_model, self.training_data, self.labels_config, self.output_dir, self.model_name, self.init_video]:
+        for field in [self.parent_model, self.training_data, self.labels_config, self.output_dir, self.model_name, self.init_video, self.qc_video, self.qc_focus_label]:
             field.textChanged.connect(self._configuration_changed)
         return card
 
@@ -505,11 +523,13 @@ class TrainingWorkspace(QWidget):
         self.action_road.setObjectName("ActionRoad"); self.action_road.setWordWrap(True); box.addWidget(self.action_road)
         first = QHBoxLayout()
         self.validate_button = QPushButton("1  Check inputs"); self.generate_button = QPushButton("2  Build training package")
+        self.load_bundle_button = QPushButton("Use existing package…"); self.load_bundle_button.setObjectName("SecondaryActionButton")
+        self.load_bundle_button.clicked.connect(self._load_existing_bundle)
         self.validate_button.setObjectName("SecondaryActionButton"); self.generate_button.setObjectName("PrimaryNextButton")
         self.validate_button.clicked.connect(self._validate); self.generate_button.clicked.connect(self._generate)
         self.generate_button.setEnabled(False)
-        first.addWidget(self.validate_button); first.addWidget(self.generate_button); first.addStretch(1)
-        first_help = QLabel("Check inputs first. When everything is valid, package creation unlocks automatically.")
+        first.addWidget(self.validate_button); first.addWidget(self.generate_button); first.addWidget(self.load_bundle_button); first.addStretch(1)
+        first_help = QLabel("Create a new package, or open an existing one and continue without rebuilding it.")
         first_help.setObjectName("InlineHint")
         second = QHBoxLayout()
         self.sync_button = QPushButton("4  Transfer package"); self.start_button = QPushButton("5  Start training")
@@ -819,6 +839,9 @@ class TrainingWorkspace(QWidget):
             remote_environment=self.remote_environment.text().strip(), slurm_account=self.account.text().strip(),
             slurm_partition=self.partition.text().strip(), walltime=self.walltime.text().strip(),
             gpus=self.gpus.value(), cpus=self.cpus.value(), memory_gb=self.memory.value(),
+            qc_enabled=self.qc_enabled.isChecked(), qc_video=self.qc_video.text().strip(),
+            qc_focus_label=self.qc_focus_label.text().strip(), qc_duration_seconds=self.qc_duration.value(),
+            qc_zoom_context=float(self.qc_zoom.currentData()),
         )
 
     def _profile(self) -> RemoteProfile:
@@ -851,18 +874,17 @@ class TrainingWorkspace(QWidget):
         config = self._config()
         if config.sync_mode == "Copy complete training package":
             size_gb = self._directory_size(Path(config.training_data)) / (1024 ** 3)
-            dialog = QMessageBox(self)
-            dialog.setIcon(QMessageBox.Question); dialog.setWindowTitle("Build a self-contained training package")
-            dialog.setText("Ready to assemble the training package?")
-            dialog.setInformativeText(
-                f"Training data size: approximately {size_gb:.2f} GB.\n\n"
-                "LabelForge will copy the model, labels and training data into a new portable folder. "
-                f"The originals remain unchanged.\n\nPackage location:\n{Path(config.output_directory).expanduser() / (safe_name(config.model_name) + '_training_bundle')}"
-            )
-            dialog.setStandardButtons(QMessageBox.Yes | QMessageBox.No); dialog.setDefaultButton(QMessageBox.Yes)
-            dialog.button(QMessageBox.Yes).setText("Build package"); dialog.button(QMessageBox.No).setText("Not yet")
-            dialog.setMinimumSize(580, 230); dialog.resize(620, 250)
-            if dialog.exec() != QMessageBox.Yes: return
+            destination = Path(config.output_directory).expanduser() / (safe_name(config.model_name) + "_training_bundle")
+            if not confirm(
+                self,
+                "Build a self-contained training package",
+                f"Training data: approximately {size_gb:.2f} GB\n\n"
+                "LabelForge copies the model, labels and training data into a new portable folder. "
+                f"The originals remain unchanged.\n\nPackage location:\n{destination}",
+                confirm_text="Build package",
+                cancel_text="Not yet",
+            ):
+                return
         self._start_bundle_worker(config)
 
     def _start_bundle_worker(self, config: TrainingBundleConfig) -> None:
@@ -907,6 +929,53 @@ class TrainingWorkspace(QWidget):
         next_step = ("Test the remote setup, then transfer the package" if remote and not self._remote_test_passed else "Transfer the package") if remote else "Start training"
         self.log.append(f"\n✓ Training package created:\n{self._last_bundle}\n\nNext: {next_step}.")
 
+    def _load_existing_bundle(self) -> None:
+        start = self.output_dir.text().strip() if hasattr(self, "output_dir") else ""
+        selected = QFileDialog.getExistingDirectory(self, "Choose an existing LabelForge training package", start)
+        if not selected:
+            return
+        bundle = Path(selected)
+        required = ["training_manifest.json", "training_entry.py"]
+        if self.execution_target.currentText() == "HPC (Slurm)":
+            required.append("slurm_job.sh")
+        missing = [name for name in required if not (bundle / name).is_file()]
+        if missing:
+            QMessageBox.warning(
+                self,
+                "Not a complete training package",
+                "This folder is missing: " + ", ".join(missing),
+            )
+            return
+        try:
+            manifest = json.loads((bundle / "training_manifest.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            QMessageBox.warning(self, "Unreadable training package", str(exc))
+            return
+        backend = str(manifest.get("backend", ""))
+        if backend.lower() == "facemap":
+            facemap_required = ["facemap_training_adapter.py"]
+            if manifest.get("qc_enabled", False):
+                facemap_required.append("facemap_qc.py")
+            facemap_missing = [name for name in facemap_required if not (bundle / name).is_file()]
+            if facemap_missing:
+                QMessageBox.warning(self, "Older incomplete Facemap package", "This package cannot run headless because it is missing: " + ", ".join(facemap_missing) + ". Build it once with the current LabelForge version; future runs can then reuse it without rebuilding.")
+                return
+        backend_index = self.backend.findText(backend)
+        if backend_index >= 0:
+            self.backend.setCurrentIndex(backend_index)
+        self._last_bundle = bundle
+        remote = self.execution_target.currentText() != "Local"
+        remote_ready = remote and self._remote_test_passed
+        self.sync_button.setEnabled(remote_ready)
+        self.start_button.setEnabled(not remote or remote_ready)
+        self.status_button.setEnabled(remote_ready)
+        self.fetch_button.setEnabled(remote_ready)
+        self._set_action_stage(4 if remote_ready else 3)
+        self.log.append(
+            f"\n✓ Existing training package opened:\n{bundle}\n\n"
+            "Choose Transfer to copy it again, or Start to reuse the package already on the selected target.\n"
+            f"Fetched files will appear in:\n{bundle / 'remote_results'}"
+        )
     def _bundle_failed(self, message: str) -> None:
         self._finish_bundle_worker(); self.generate_button.setEnabled(True)
         self.log.append(f"\nPackage build stopped: {message}")
@@ -941,6 +1010,11 @@ class TrainingWorkspace(QWidget):
             self._run_commands([command], "Starting remote training")
 
     def _check_status(self) -> None:
+        code = self.totp_code.text().strip()
+        if not code:
+            self.log.append("\nChecking JUSUF needs a fresh Google Authenticator code. Enter it above, then click Check status again.")
+            self.totp_code.setFocus(); return
+        self._pending_totp = code
         try: command = status_command(self._profile(), self._last_job_id)
         except Exception as exc:
             QMessageBox.critical(self, "Cannot check status", str(exc)); return
@@ -948,10 +1022,15 @@ class TrainingWorkspace(QWidget):
 
     def _fetch_results(self) -> None:
         if not self._last_bundle: return
+        code = self.totp_code.text().strip()
+        if not code:
+            self.log.append("\nFetching from JUSUF needs a fresh Google Authenticator code. Enter it above, then click Fetch results again.")
+            self.totp_code.setFocus(); return
+        self._pending_totp = code
         try: commands = fetch_commands(self._profile(), self._last_bundle)
         except Exception as exc:
             QMessageBox.critical(self, "Cannot fetch results", str(exc)); return
-        self._run_commands(commands, "Fetching logs and results", tolerate_failures=True)
+        self._run_commands(commands, "Fetching logs and results")
 
     def _run_commands(self, commands: list[list[str]], operation: str, working_directory: str | None = None, tolerate_failures: bool = False) -> None:
         if self._process and self._process.state() != QProcess.NotRunning:
@@ -976,11 +1055,14 @@ class TrainingWorkspace(QWidget):
                 else:
                     self.status_button.setEnabled(True); self.fetch_button.setEnabled(True); self._set_action_stage(6)
             if self._operation.startswith("Checking"): self._set_action_stage(7)
-            if self._operation.startswith("Fetching"): self._set_action_stage(8)
+            if self._operation.startswith("Fetching"):
+                self._set_action_stage(8)
+                if self._last_bundle:
+                    self.log.append(f"Results saved locally in: {self._last_bundle / 'remote_results'}")
             return
         command, cwd = self._command_queue.pop(0)
         self._process = QProcess(self); self._process.setProgram(command[0]); self._process.setArguments(command[1:])
-        if self._operation.startswith(("Testing remote", "Synchronizing", "Starting remote")):
+        if self._operation.startswith(("Testing remote", "Synchronizing", "Starting remote", "Checking remote", "Fetching")):
             environment = QProcessEnvironment.systemEnvironment()
             askpass = Path(sys.executable).with_name("LabelForgeAskpass.exe")
             if not askpass.is_file():
@@ -998,7 +1080,7 @@ class TrainingWorkspace(QWidget):
         self._process.setProcessChannelMode(QProcess.MergedChannels)
         self._process.readyReadStandardOutput.connect(self._read_process_output)
         self._process.finished.connect(self._command_finished); self._process.start()
-        if self._operation.startswith(("Testing remote", "Synchronizing", "Starting remote")):
+        if self._operation.startswith(("Testing remote", "Synchronizing", "Starting remote", "Checking remote", "Fetching")):
             self._pending_totp = ""; self.totp_code.clear()
 
     def _read_process_output(self) -> None:

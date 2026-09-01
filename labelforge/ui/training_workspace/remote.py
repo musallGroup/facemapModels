@@ -177,7 +177,7 @@ def status_command(profile: RemoteProfile, job_id: str = "") -> list[str]:
         command = f"squeue {selector} -o '%.18i %.12T %.24j %.10M %.10l %R'"
     else:
         command = "ps -u \"$USER\" -o pid,stat,etime,cmd | grep training_entry.py | grep -v grep || true"
-    return [ssh, *ssh_transport_options(profile), profile.destination, command]
+    return [ssh, *interactive_ssh_transport_options(profile), profile.destination, command]
 
 
 def fetch_commands(profile: RemoteProfile, bundle: Path) -> list[list[str]]:
@@ -187,7 +187,7 @@ def fetch_commands(profile: RemoteProfile, bundle: Path) -> list[list[str]]:
     destination = bundle / "remote_results"
     destination.mkdir(exist_ok=True)
     remote = profile.bundle_path(bundle)
-    return [
-        [scp, *scp_transport_options(profile), "-r", f"{profile.destination}:{remote}/logs", str(destination)],
-        [scp, *scp_transport_options(profile), "-r", f"{profile.destination}:{remote}/results", str(destination)],
-    ]
+    # Fetch logs and results over one connection, so JUSUF asks for MFA once.
+    # run_local.bat may also match [lr]*; it is tiny and harmless here.
+    source = f"{profile.destination}:{remote}/[lr]*"
+    return [[scp, *interactive_scp_transport_options(profile), "-r", source, str(destination)]]
