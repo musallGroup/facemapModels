@@ -174,7 +174,13 @@ def status_command(profile: RemoteProfile, job_id: str = "") -> list[str]:
         raise RuntimeError("Windows OpenSSH (ssh.exe) is required.")
     if profile.target == "HPC (Slurm)":
         selector = f"-j {quote_remote(job_id)}" if job_id else f"-u {quote_remote(profile.user)}"
-        command = f"squeue {selector} -o '%.18i %.12T %.24j %.10M %.10l %R'"
+        # squeue shows only running/queued jobs; fall back to sacct so completed
+        # and failed jobs are also visible after they leave the queue.
+        command = (
+            f"squeue {selector} -o '%.18i %.12T %.24j %.10M %.10l %R'; "
+            f"sacct {selector} --format=JobID%18,State%12,JobName%24,Elapsed%10,Timelimit%10 "
+            f"--noheader 2>/dev/null | grep -v '\\.batch' | grep -v '\\.extern' || true"
+        )
     else:
         command = "ps -u \"$USER\" -o pid,stat,etime,cmd | grep training_entry.py | grep -v grep || true"
     return [ssh, *interactive_ssh_transport_options(profile), profile.destination, command]

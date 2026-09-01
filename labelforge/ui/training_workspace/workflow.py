@@ -67,6 +67,8 @@ class TrainingWorkspace(QWidget):
         self._operation = ""
         self._last_bundle: Path | None = None
         self._last_job_id = ""
+        self._job_submit_time: float = 0.0
+        self._elapsed_timer: QTimer | None = None
         self._validated = False
         self._remote_test_passed = False
         self._pending_totp = ""
@@ -577,7 +579,9 @@ class TrainingWorkspace(QWidget):
             "Check status reads the current job state.  Fetch results copies logs and trained outputs back."
         )
         action_help.setObjectName("InlineHint"); action_help.setWordWrap(True)
-        box.addLayout(first); box.addWidget(first_help); box.addSpacing(5); box.addLayout(second); box.addWidget(action_help)
+        self._job_id_label = QLabel(); self._job_id_label.setObjectName("InlineHint")
+        self._job_id_label.setWordWrap(True); self._job_id_label.setVisible(False)
+        box.addLayout(first); box.addWidget(first_help); box.addSpacing(5); box.addLayout(second); box.addWidget(action_help); box.addWidget(self._job_id_label)
         self.log = QTextEdit(); self.log.setObjectName("TextInput"); self.log.setReadOnly(True)
         self.log.setMaximumHeight(190); self.log.setPlaceholderText("Validation, synchronization and training output appears here.")
         box.addWidget(self.log)
@@ -960,6 +964,18 @@ class TrainingWorkspace(QWidget):
         next_step = ("Test the remote setup, then transfer the package" if remote and not self._remote_test_passed else "Transfer the package") if remote else "Start training"
         self.log.append(f"\n✓ Training package created:\n{self._last_bundle}\n\nNext: {next_step}.")
 
+    def _update_elapsed_label(self) -> None:
+        if not hasattr(self, "_job_id_label") or not self._last_job_id: return
+        import time as _time
+        elapsed_sec = int(_time.monotonic() - self._job_submit_time) if self._job_submit_time else 0
+        minutes = elapsed_sec // 60
+        time_str = f"{minutes} min" if minutes < 60 else f"{minutes // 60}h {minutes % 60}min"
+        self._job_id_label.setText(
+            f"⏳  Job {self._last_job_id} · {time_str} seit Submit · "
+            "Klick '6 Check status' um zu sehen ob er fertig ist, dann '7 Fetch results'."
+        )
+        self._job_id_label.setVisible(True)
+
     def _load_existing_bundle_early(self) -> None:
         """Load an existing bundle from the mode card — populates all form fields
         from the manifest and jumps straight to Transfer / Start."""
@@ -1182,9 +1198,36 @@ class TrainingWorkspace(QWidget):
                 if self.execution_target.currentText() == "Local": self._set_action_stage(4)
                 else:
                     self.status_button.setEnabled(True); self.fetch_button.setEnabled(True); self._set_action_stage(6)
-            if self._operation.startswith("Checking"): self._set_action_stage(7)
+                    if self._last_job_id and hasattr(self, "_job_id_label"):
+                        import time as _time
+                        self._job_submit_time = _time.monotonic()
+                        self._job_id_label.setVisible(True)
+                        self._update_elapsed_label()
+                        if self._elapsed_timer is None:
+                            self._elapsed_timer = QTimer(self)
+                            self._elapsed_timer.timeout.connect(self._update_elapsed_label)
+                        self._elapsed_timer.start(30000)
+            if self._operation.startswith("Checking"):
+                self._set_action_stage(7)
+                if hasattr(self, "_job_id_label") and self._last_job_id:
+                    out = self._command_output
+                    running = bool(re.search(r"\b(RUNNING|PENDING|R\b|PD\b)", out))
+                    completed = bool(re.search(r"\bCOMPLETED\b", out))
+                    failed = bool(re.search(r"\b(FAILED|TIMEOUT|CANCELLED)\b", out))
+                    no_rows = self._last_job_id not in out
+                    if running:
+                        self._job_id_label.setText(f"⏳  Job {self._last_job_id} is still running — wait before fetching.")
+                    elif failed:
+                        self._job_id_label.setText(f"✕  Job {self._last_job_id} failed. Fetch logs to see the error.")
+                    elif completed or no_rows:
+                        self._job_id_label.setText(f"✓  Job {self._last_job_id} finished — ready to fetch results.")
+                    self._job_id_label.setVisible(True)
             if self._operation.startswith("Fetching"):
                 self._set_action_stage(8)
+                if self._elapsed_timer:
+                    self._elapsed_timer.stop()
+                if hasattr(self, "_job_id_label") and self._last_job_id:
+                    self._job_id_label.setText(f"✓  Job {self._last_job_id} · Ergebnisse wurden abgeholt.")
                 if self._last_bundle:
                     self.log.append(f"Results saved locally in: {self._last_bundle / 'remote_results'}")
             return
