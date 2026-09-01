@@ -11,6 +11,41 @@ from datetime import datetime
 from pathlib import Path
 
 
+def _cut_qc_clip(source: Path, dest: Path, duration_sec: int) -> bool:
+    """Cut the middle *duration_sec* seconds from *source* and write to *dest*.
+
+    Returns True on success.  Falls back gracefully if cv2 is unavailable or
+    the source video cannot be opened, leaving the caller to decide whether to
+    fall back to a full-copy.
+    """
+    try:
+        import cv2  # type: ignore
+    except ImportError:
+        return False
+    cap = cv2.VideoCapture(str(source))
+    if not cap.isOpened():
+        return False
+    fps = float(cap.get(cv2.CAP_PROP_FPS) or 30)
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap.release()
+    count = min(total, max(1, int(duration_sec * fps)))
+    start = max(0, (total - count) // 2)
+    cap = cv2.VideoCapture(str(source))
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    writer = cv2.VideoWriter(str(dest), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
+    for _ in range(count):
+        ok, frame = cap.read()
+        if not ok:
+            break
+        writer.write(frame)
+    cap.release()
+    writer.release()
+    return dest.is_file() and dest.stat().st_size > 0
+
+
 @dataclass(frozen=True)
 class TrainingBundleConfig:
     training_mode: str
@@ -248,15 +283,36 @@ def create_bundle(config: TrainingBundleConfig) -> Path:
         shutil.copy2(config.labels_or_config, labels_target)
         manifest["runtime_labels_or_config"] = str(labels_target.relative_to(bundle)).replace("\\", "/")
         if config.initialization_video:
-            video_target = payload / "initialization_video" / Path(config.initialization_video).name
-            video_target.parent.mkdir()
-            shutil.copy2(config.initialization_video, video_target)
-            manifest["runtime_initialization_video"] = str(video_target.relative_to(bundle)).replace("\\", "/")
-        if config.qc_video:
-            qc_video_target = payload / "qc_video" / Path(config.qc_video).name
-            qc_video_target.parent.mkdir()
-            shutil.copy2(config.qc_video, qc_video_target)
-            manifest["runtime_qc_video"] = str(qc_video_target.relative_to(bundle)).replace("\\", "/")
+            # Cut the init video to a short clip — Facemap only needs to open
+            # it to read frame dimensions; the actual training uses labeled
+            # image frames directly.  30 seconds is more than sufficient.
+            init_clip_dest = payload / "initialization_video" / "init_clip.mp4"
+            init_clip_dest.parent.mkdir()
+            if _cut_qc_clip(Path(config.initialization_video), init_clip_dest, min(30, config.qc_duration_seconds)):
+                manifest["runtime_initialization_video"] = str(init_clip_dest.relative_to(bundle)).replace("\\", "/")
+            else:
+                # Fallback: full copy if cv2 unavailable
+                video_target = payload / "initialization_video" / Path(config.initialization_video).name
+                shutil.copy2(config.initialization_video, video_target)
+                manifest["runtime_initialization_video"] = str(video_target.relative_to(bundle)).replace("\\", "/")
+        if config.qc_enabled:
+            # Cut only the segment that QC actually uses (middle N seconds) so
+            # the bundle does not carry a full multi-GB video file.  The clip
+            # source is the dedicated QC video when provided, otherwise the
+            # Facemap initialization video (already in the payload).
+            qc_source = Path(config.qc_video) if config.qc_video else (
+                Path(config.initialization_video) if config.initialization_video else None
+            )
+            if qc_source and qc_source.is_file():
+                clip_dest = payload / "qc_clip" / "qc_clip.mp4"
+                if _cut_qc_clip(qc_source, clip_dest, config.qc_duration_seconds):
+                    manifest["runtime_qc_clip"] = str(clip_dest.relative_to(bundle)).replace("\\", "/")
+                elif config.qc_video:
+                    # cv2 unavailable or failed — fall back to full copy
+                    qc_video_target = payload / "qc_video" / Path(config.qc_video).name
+                    qc_video_target.parent.mkdir(exist_ok=True)
+                    shutil.copy2(config.qc_video, qc_video_target)
+                    manifest["runtime_qc_video"] = str(qc_video_target.relative_to(bundle)).replace("\\", "/")
         data_source = Path(config.training_data)
         data_target = payload / "training_data"
         if data_source.is_dir():

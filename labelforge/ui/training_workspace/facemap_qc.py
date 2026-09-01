@@ -21,11 +21,24 @@ def main():
  if not model.is_file() or not info.is_file():raise RuntimeError("QC needs the trained model and model-info JSON")
  labels=json.loads(info.read_text()).get("labels",[])
  if not labels:raise RuntimeError("QC cannot find the trained keypoint names")
- video=rp("runtime_qc_video","qc_video") if C.get("qc_video") or C.get("runtime_qc_video") else rp("runtime_initialization_video","initialization_video")
+ # Prefer the pre-cut QC clip (new bundles) — it is already trimmed to the
+ # right segment so we use all its frames.  Fall back to the full video for
+ # older bundles that do not carry a clip.
+ clip_key=C.get("runtime_qc_clip","")
+ if clip_key:
+  clip_path=Path(clip_key) if Path(clip_key).is_absolute() else R/clip_key
+  video=clip_path;precut=clip_path.is_file()
+ else:
+  video=rp("runtime_qc_video","qc_video") if C.get("qc_video") or C.get("runtime_qc_video") else rp("runtime_initialization_video","initialization_video");precut=False
  cap=cv2.VideoCapture(str(video))
  if not cap.isOpened():raise RuntimeError(f"QC video cannot be opened: {video}")
  fps=float(cap.get(cv2.CAP_PROP_FPS) or 30);total=int(cap.get(cv2.CAP_PROP_FRAME_COUNT));w=int(cap.get(cv2.CAP_PROP_FRAME_WIDTH));h=int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT));cap.release()
- count=min(total,max(1,int(float(C.get("qc_duration_seconds",60))*fps)));start=max(0,(total-count)//2);indices=np.arange(start,start+count,dtype=np.int64)
+ if precut:
+  # Clip is already the right segment — use all frames starting at 0
+  count=total;start=0
+ else:
+  count=min(total,max(1,int(float(C.get("qc_duration_seconds",60))*fps)));start=max(0,(total-count)//2)
+ indices=np.arange(start,start+count,dtype=np.int64)
  pose=Pose(filenames=[[str(video)]],bbox=[],bbox_set=False,resize=False,add_padding=False,gui=None,GUIobject=None,net=None,model_name=str(model));pose.bodyparts=list(labels);pose.batch_size=8;pose.pose_prediction_setup()
  pred=normalize(pose.predict_landmarks(video_id=0,frame_ind=indices),len(indices),len(labels))
  try:
