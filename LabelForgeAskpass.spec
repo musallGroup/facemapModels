@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['C:/Users/daubenfeld/Documents/Codex/2026-08-26/create-a-scheduled-task-called-weekday/work/labelforge_training_workspace/ssh_askpass.py'],
+    ['ssh_askpass.py'],
     pathex=[],
     binaries=[],
     datas=[],
