@@ -288,6 +288,16 @@ class TrainingWorkspace(QWidget):
             "1  What do you want to train?",
             "Choose the goal. LabelForge will suggest the correct new model name and keep the parent untouched.",
         )
+        # Quick-load shortcut — always visible at the top of the card
+        shortcut_row = QHBoxLayout(); shortcut_row.setSpacing(10)
+        shortcut_label = QLabel("Already have a bundle?"); shortcut_label.setObjectName("FieldHint")
+        self.early_load_button = QPushButton("Use existing package…")
+        self.early_load_button.setObjectName("SecondaryActionButton")
+        self.early_load_button.clicked.connect(self._load_existing_bundle_early)
+        shortcut_row.addWidget(shortcut_label); shortcut_row.addWidget(self.early_load_button); shortcut_row.addStretch(1)
+        box.addLayout(shortcut_row)
+        sep = QFrame(); sep.setFrameShape(QFrame.HLine); sep.setObjectName("CardSeparator")
+        box.addWidget(sep)
         row = QHBoxLayout(); row.setSpacing(12)
         self.mode_group = QButtonGroup(self); self.mode_group.setExclusive(True)
         choices = [
@@ -949,6 +959,103 @@ class TrainingWorkspace(QWidget):
         self._set_action_stage(4 if remote and self._remote_test_passed else 3)
         next_step = ("Test the remote setup, then transfer the package" if remote and not self._remote_test_passed else "Transfer the package") if remote else "Start training"
         self.log.append(f"\n✓ Training package created:\n{self._last_bundle}\n\nNext: {next_step}.")
+
+    def _load_existing_bundle_early(self) -> None:
+        """Load an existing bundle from the mode card — populates all form fields
+        from the manifest and jumps straight to Transfer / Start."""
+        selected = QFileDialog.getExistingDirectory(self, "Choose an existing LabelForge training package", "D:\\")
+        if not selected:
+            return
+        bundle = Path(selected)
+        required = ["training_manifest.json", "training_entry.py"]
+        missing = [n for n in required if not (bundle / n).is_file()]
+        if missing:
+            QMessageBox.warning(self, "Not a complete training package", "This folder is missing: " + ", ".join(missing))
+            return
+        try:
+            manifest = json.loads((bundle / "training_manifest.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            QMessageBox.warning(self, "Unreadable training package", str(exc))
+            return
+        backend = str(manifest.get("backend", "Facemap"))
+        if backend.lower() == "facemap":
+            for name in ["facemap_training_adapter.py"]:
+                if not (bundle / name).is_file():
+                    QMessageBox.warning(self, "Older incomplete Facemap package",
+                        f"Missing {name}. Rebuild with the current LabelForge version.")
+                    return
+
+        # ── Set mode ──────────────────────────────────────────────────────────
+        mode = str(manifest.get("training_mode", "Create"))
+        for btn in self.mode_buttons.values(): btn.setChecked(False)
+        if mode in self.mode_buttons: self.mode_buttons[mode].setChecked(True)
+        self._mode_changed(mode)
+
+        # ── Populate material fields ───────────────────────────────────────────
+        backend_idx = self.backend.findText(backend)
+        if backend_idx >= 0: self.backend.setCurrentIndex(backend_idx)
+
+        def _set(field, value):
+            if value and hasattr(self, field):
+                getattr(self, field).setText(str(value))
+
+        _set("parent_model",  manifest.get("parent_model", ""))
+        _set("training_data", manifest.get("training_data", ""))
+        _set("labels_config", manifest.get("labels_or_config", ""))
+        _set("init_video",    manifest.get("initialization_video", ""))
+        _set("model_name",    manifest.get("model_name", ""))
+        _set("output_dir",    str(bundle.parent))
+        _set("qc_video",      manifest.get("qc_video", ""))
+        self.qc_enabled.setChecked(bool(manifest.get("qc_enabled", True)))
+        self.qc_duration.setValue(int(manifest.get("qc_duration_seconds", 60)))
+        zoom_val = float(manifest.get("qc_zoom_context", 1.0))
+        for i in range(self.qc_zoom.count()):
+            if abs(float(self.qc_zoom.itemData(i)) - zoom_val) < 0.01:
+                self.qc_zoom.setCurrentIndex(i); break
+        focus = str(manifest.get("qc_focus_label", ""))
+        self._update_focus_dropdown(manifest.get("labels_or_config", ""))
+        if focus:
+            idx = self.qc_focus_label.findData(focus)
+            if idx >= 0: self.qc_focus_label.setCurrentIndex(idx)
+
+        # ── Populate execution fields if present ───────────────────────────────
+        target = str(manifest.get("execution_target", "HPC (Slurm)"))
+        target_idx = self.execution_target.findText(target)
+        if target_idx >= 0:
+            self.execution_target.setCurrentIndex(target_idx)
+            self._target_changed(target)
+        _set("remote_host",        manifest.get("remote_host", ""))
+        _set("remote_user",        manifest.get("remote_user", ""))
+        _set("remote_root",        manifest.get("remote_root", ""))
+        _set("remote_environment", manifest.get("remote_environment", ""))
+        _set("account",            manifest.get("slurm_account", ""))
+        _set("partition",          manifest.get("slurm_partition", ""))
+
+        # ── Advanced training params ───────────────────────────────────────────
+        self.epochs.setValue(int(manifest.get("epochs", 100)))
+        self.batch.setValue(int(manifest.get("batch_size", 1)))
+        self.lr.setValue(float(manifest.get("learning_rate", 0.00005)))
+        self.seed.setValue(int(manifest.get("random_seed", 20260828)))
+
+        # ── Activate bundle and unlock action buttons ──────────────────────────
+        self._last_bundle = bundle
+        self._validated = True
+        remote = target != "Local"
+        remote_ready = remote and self._remote_test_passed
+        self.run_card.setVisible(True); self.execution_card.setVisible(True); self.actions_card.setVisible(True)
+        self.generate_button.setEnabled(False)
+        self.sync_button.setEnabled(remote_ready)
+        self.start_button.setEnabled(not remote or remote_ready)
+        self.status_button.setEnabled(remote_ready)
+        self.fetch_button.setEnabled(remote_ready)
+        self._set_action_stage(4 if remote_ready else 3)
+        self.log.append(
+            f"\n✓ Bundle geladen:\n{bundle}\n\n"
+            f"Weiter mit {'Transfer → Start' if remote else 'Start'}.\n"
+            f"Fetched files: {bundle / 'remote_results'}"
+        )
+        # Scroll to actions card
+        QTimer.singleShot(100, lambda: self._workspace_scroll.ensureWidgetVisible(self.actions_card))
 
     def _load_existing_bundle(self) -> None:
         start = self.output_dir.text().strip() if hasattr(self, "output_dir") else ""
