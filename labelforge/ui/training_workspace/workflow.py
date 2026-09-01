@@ -23,6 +23,8 @@ from .remote import (
     RemoteProfile, fetch_commands, preflight_command, start_command, status_command, sync_commands,
 )
 from .naming import ensure_v1, next_refinement_name
+from ..common.dialogs import confirm
+from ...model_metadata import read_facemap_labels_csv
 
 
 class ClearComboBox(QComboBox):
@@ -203,7 +205,7 @@ class TrainingWorkspace(QWidget):
             (self.init_video, "Facemap initialization video", "Facemap uses this video to initialize the model. It is required for Facemap whether training runs locally or on JUSUF."),
             (self.qc_enabled, "Automatic visual QC", "Creates a short result video after training: the full frame plus a focused zoom panel with the predicted keypoints. It is fetched together with the model and logs."),
             (self.qc_video, "QC source video", "Optional video used to test the newly trained model. Leave it empty to reuse the Facemap initialization video."),
-            (self.qc_focus_label, "QC focus keypoint", "The zoom panel follows this keypoint. Leave it empty and LabelForge automatically prefers pupil, eye, tongue, nose or mouth labels."),
+            (self.qc_focus_label, "QC focus keypoint", "Pick a keypoint from the list to zoom in on it. The zoom is a static region — LabelForge computes the median position across all frames. 'Auto' prefers pupil, eye, tongue, nose or mouth labels."),
             (self.qc_duration, "QC preview length", "Choose 30–120 seconds. Sixty seconds is usually long enough to spot drift, swaps or poor confidence without producing a huge result file."),
             (self.qc_zoom, "QC zoom context", "Balanced is close to the established iris QC. More context shows surrounding anatomy; closer detail magnifies the selected keypoint."),
             (self.advanced_training_button, "Advanced training settings", "Opens optional expert controls. The normal workflow already provides safe defaults, so beginners can leave this section closed."),
@@ -359,8 +361,9 @@ class TrainingWorkspace(QWidget):
         self.init_video = self._line("Facemap initialization video")
         self.qc_enabled = QCheckBox("Create a short visual quality-check preview after training")
         self.qc_enabled.setChecked(True)
-        self.qc_video = self._line("Optional QC video; initialization video is used if empty")
-        self.qc_focus_label = self._line("Optional focus keypoint, e.g. pupil_top")
+        self.qc_video = self._line("Optional — uses init video if empty")
+        self.qc_focus_label = ClearComboBox()
+        self.qc_focus_label.addItem("Auto — prefers pupil, eye, tongue, nose or mouth", "")
         self.qc_duration = QSpinBox(); self.qc_duration.setRange(30, 120); self.qc_duration.setValue(60); self.qc_duration.setSuffix(" seconds")
         self.qc_zoom = ClearComboBox(); self.qc_zoom.addItem("Balanced context  —  recommended", 1.0); self.qc_zoom.addItem("More surrounding context", 1.4); self.qc_zoom.addItem("Closer detail", 0.75)
         self.training_script = self._line("Versioned Facemap training adapter")
@@ -417,8 +420,10 @@ class TrainingWorkspace(QWidget):
         self.model_name.editingFinished.connect(self._normalize_model_name)
         self.model_name.textChanged.connect(self._update_bundle_destination)
         self.output_dir.textChanged.connect(self._update_bundle_destination)
-        for field in [self.parent_model, self.training_data, self.labels_config, self.output_dir, self.model_name, self.init_video, self.qc_video, self.qc_focus_label]:
+        for field in [self.parent_model, self.training_data, self.labels_config, self.output_dir, self.model_name, self.init_video, self.qc_video]:
             field.textChanged.connect(self._configuration_changed)
+        self.labels_config.textChanged.connect(self._update_focus_dropdown)
+        self.qc_focus_label.currentIndexChanged.connect(self._configuration_changed)
         return card
 
     def _update_bundle_destination(self, *_args) -> None:
@@ -430,6 +435,24 @@ class TrainingWorkspace(QWidget):
             self.bundle_destination_hint.setToolTip(str(destination))
         else:
             self.bundle_destination_hint.setText("Choose a folder and model name to preview the exact package location.")
+
+    def _update_focus_dropdown(self, labels_path: str = "") -> None:
+        """Populate the QC focus keypoint dropdown from the selected labels.csv."""
+        if not hasattr(self, "qc_focus_label"): return
+        path = Path(labels_path or "")
+        current = self.qc_focus_label.currentData()
+        self.qc_focus_label.blockSignals(True)
+        self.qc_focus_label.clear()
+        self.qc_focus_label.addItem("Auto — prefers pupil, eye, tongue, nose or mouth", "")
+        if path.suffix.lower() == ".csv" and path.is_file():
+            try:
+                for label in read_facemap_labels_csv(str(path)):
+                    self.qc_focus_label.addItem(label, label)
+            except Exception:
+                pass
+        idx = self.qc_focus_label.findData(current)
+        self.qc_focus_label.setCurrentIndex(idx if idx >= 0 else 0)
+        self.qc_focus_label.blockSignals(False)
 
     def _execution_card(self) -> QFrame:
         card, box = self._card(
@@ -840,7 +863,7 @@ class TrainingWorkspace(QWidget):
             slurm_partition=self.partition.text().strip(), walltime=self.walltime.text().strip(),
             gpus=self.gpus.value(), cpus=self.cpus.value(), memory_gb=self.memory.value(),
             qc_enabled=self.qc_enabled.isChecked(), qc_video=self.qc_video.text().strip(),
-            qc_focus_label=self.qc_focus_label.text().strip(), qc_duration_seconds=self.qc_duration.value(),
+            qc_focus_label=self.qc_focus_label.currentData() or "", qc_duration_seconds=self.qc_duration.value(),
             qc_zoom_context=float(self.qc_zoom.currentData()),
         )
 
@@ -873,12 +896,10 @@ class TrainingWorkspace(QWidget):
         if not self._validate(): return
         config = self._config()
         if config.sync_mode == "Copy complete training package":
-            size_gb = self._directory_size(Path(config.training_data)) / (1024 ** 3)
             destination = Path(config.output_directory).expanduser() / (safe_name(config.model_name) + "_training_bundle")
             if not confirm(
                 self,
                 "Build a self-contained training package",
-                f"Training data: approximately {size_gb:.2f} GB\n\n"
                 "LabelForge copies the model, labels and training data into a new portable folder. "
                 f"The originals remain unchanged.\n\nPackage location:\n{destination}",
                 confirm_text="Build package",

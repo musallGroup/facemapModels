@@ -41,17 +41,22 @@ def main():
   focus=next((x for word in ("pupil","eye","tongue","nose","mouth") for x in labels if word in x.lower()),labels[0])
  fi=labels.index(focus);context=float(C.get("qc_zoom_context",1.0));cw=max(80,int(240*context));ch=max(60,int(180*context));threshold=0.2
  colors=[(66,153,225),(72,187,120),(237,137,54),(159,122,234),(245,101,101),(56,178,172)]
+ # Compute a static zoom anchor from the median position of high-confidence predictions.
+ # The zoom region is fixed for the entire video — it does not track or follow the keypoint.
+ valid=pred[:,fi,2]>=threshold
+ if valid.any():
+  anchor_x=float(np.median(pred[valid,fi,0]));anchor_y=float(np.median(pred[valid,fi,1]))
+ else:
+  anchor_x=w/2;anchor_y=h/2
+ x1_zoom=max(0,min(w-cw,int(anchor_x-cw/2)));y1_zoom=max(0,min(h-ch,int(anchor_y-ch/2)))
  cap=cv2.VideoCapture(str(video));cap.set(cv2.CAP_PROP_POS_FRAMES,start);panel_w=max(360,min(640,w));writer=cv2.VideoWriter(str(qc/"preview.mp4"),cv2.VideoWriter_fourcc(*"mp4v"),fps,(w+panel_w,h))
- last=np.array([w/2,h/2],float)
  for j in range(len(indices)):
   ok,frame=cap.read()
   if not ok:break
   row=pred[j]
-  x,y,lik=row[fi]
-  if np.isfinite(x) and np.isfinite(y) and lik>=threshold:last=.8*last+.2*np.array([x,y])
   for i,(x,y,lik) in enumerate(row):
    if np.isfinite(x) and np.isfinite(y) and lik>=threshold:cv2.circle(frame,(int(x),int(y)),3,colors[i%len(colors)],-1,cv2.LINE_AA)
-  x1=max(0,min(w-cw,int(last[0]-cw/2)));y1=max(0,min(h-ch,int(last[1]-ch/2)));crop=frame[y1:y1+ch,x1:x1+cw]
+  crop=frame[y1_zoom:y1_zoom+ch,x1_zoom:x1_zoom+cw]
   zoom=cv2.resize(crop,(panel_w,h),interpolation=cv2.INTER_CUBIC);cv2.putText(zoom,f"Focus: {focus}",(18,32),cv2.FONT_HERSHEY_SIMPLEX,.75,(255,255,255),2,cv2.LINE_AA);writer.write(np.hstack([frame,zoom]))
  cap.release();writer.release()
  summary={name:{"mean_likelihood":float(np.nanmean(pred[:,i,2])),"min_likelihood":float(np.nanmin(pred[:,i,2]))} for i,name in enumerate(labels)}
