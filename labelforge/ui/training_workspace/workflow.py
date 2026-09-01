@@ -979,6 +979,10 @@ class TrainingWorkspace(QWidget):
     def _load_existing_bundle_early(self) -> None:
         """Load an existing bundle from the mode card — populates all form fields
         from the manifest and jumps straight to Transfer / Start."""
+        # _set() calls below trigger _configuration_changed which resets
+        # _remote_test_passed. Save and restore so an already-tested remote
+        # stays unlocked after loading a bundle.
+        _was_tested = self._remote_test_passed
         selected = QFileDialog.getExistingDirectory(self, "Choose an existing LabelForge training package", "D:\\")
         if not selected:
             return
@@ -1054,6 +1058,7 @@ class TrainingWorkspace(QWidget):
         self.seed.setValue(int(manifest.get("random_seed", 20260828)))
 
         # ── Activate bundle and unlock action buttons ──────────────────────────
+        self._remote_test_passed = _was_tested  # restore before computing remote_ready
         self._last_bundle = bundle
         self._validated = True
         remote = target != "Local"
@@ -1074,6 +1079,7 @@ class TrainingWorkspace(QWidget):
         QTimer.singleShot(100, lambda: self._workspace_scroll.ensureWidgetVisible(self.actions_card))
 
     def _load_existing_bundle(self) -> None:
+        _was_tested = self._remote_test_passed
         start = self.output_dir.text().strip() if hasattr(self, "output_dir") else ""
         selected = QFileDialog.getExistingDirectory(self, "Choose an existing LabelForge training package", start)
         if not selected:
@@ -1107,6 +1113,7 @@ class TrainingWorkspace(QWidget):
         backend_index = self.backend.findText(backend)
         if backend_index >= 0:
             self.backend.setCurrentIndex(backend_index)
+        self._remote_test_passed = _was_tested  # restore before computing remote_ready
         self._last_bundle = bundle
         remote = self.execution_target.currentText() != "Local"
         remote_ready = remote and self._remote_test_passed
