@@ -1,8 +1,7 @@
 """Headless Facemap 1.0.8 adapter for LabelForge."""
 import csv,hashlib,json,math,random
 from pathlib import Path
-import numpy as np,torch,torch.nn as nn
-from PIL import Image as _PILImage
+import cv2,numpy as np,torch,torch.nn as nn
 from facemap.pose.pose import Pose
 import facemap.pose.pose as pm
 from facemap.pose import datasets,model_training
@@ -30,7 +29,7 @@ def data(frames,csvpath):
      local=frames/Path(v).name;original=Path(v)
      if local.is_file():fp=local;break
      if original.is_file():fp=original;break
-   im=np.array(_PILImage.open(str(fp)).convert("L")) if fp else None
+   im=cv2.imread(str(fp),0) if fp else None
    if im is None:skipped.append([line,"image unavailable"]);continue
    xy=np.full((len(labels),2),np.nan,np.float32)
    for i,label in enumerate(labels):
