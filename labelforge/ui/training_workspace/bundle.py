@@ -229,11 +229,17 @@ def _slurm_text(config: TrainingBundleConfig) -> str:
     partition = f"#SBATCH --partition={config.slurm_partition}\n" if config.slurm_partition else ""
     gpu = f"#SBATCH --gres=gpu:{config.gpus}\n" if config.gpus else ""
     if environment.startswith("/"):
+        env_root = environment.rstrip('/')
+        cv2_ensure = (
+            f"{shlex.quote(env_root)}/bin/python -c 'import cv2' 2>/dev/null"
+            f" || {shlex.quote(env_root)}/bin/pip install --quiet opencv-python-headless\n"
+        )
         module_setup = (
             "module purge\nmodule load Stages/2025 GCCcore/.13.3.0 PyTorch/2.5.1\n"
             if "juelich.de" in config.remote_host and config.backend.lower() == "facemap" else ""
         )
-        launch = f"{shlex.quote(environment.rstrip('/'))}/bin/python training_entry.py"
+        module_setup += cv2_ensure
+        launch = f"{shlex.quote(env_root)}/bin/python training_entry.py"
     else:
         module_setup = "source \"$HOME/.bashrc\" || true\n"
         launch = f"conda run -n {shlex.quote(environment)} python training_entry.py"
