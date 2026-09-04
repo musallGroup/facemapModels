@@ -1370,16 +1370,18 @@ class TrainingWorkspace(QWidget):
         commands = [
             [self.conda_path, "create", "-n", env, f"python={python}", "pip", "-y"],
         ]
+        commands.append([self.conda_path, "run", "-n", env, "python", "-m", "pip", "install", "--upgrade", package])
         if has_gpu and backend == "facemap":
-            # Install CUDA-enabled PyTorch before facemap so training uses the GPU.
+            # Install CUDA-enabled PyTorch AFTER facemap: pip install facemap pulls in CPU-only
+            # torch as a dependency and would overwrite a pre-installed CUDA build.  Installing
+            # last guarantees the CUDA wheel wins.
             commands.append([
                 self.conda_path, "run", "-n", env, "python", "-m", "pip", "install",
                 "torch", "torchvision", "--index-url", "https://download.pytorch.org/whl/cu124",
             ])
-        commands.append([self.conda_path, "run", "-n", env, "python", "-m", "pip", "install", "--upgrade", package])
         if backend == "facemap":
             # Facemap 1.0.8 is not compatible with numpy 2.x — pin to the last 1.x release.
-            # This runs after facemap so it wins over any numpy 2.x pulled in by torch/torchvision.
+            # This runs last so it wins over any numpy 2.x pulled in by torch/torchvision.
             commands.append([
                 self.conda_path, "run", "-n", env, "python", "-m", "pip", "install", "numpy<2",
             ])
