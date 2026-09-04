@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import base64
 import sys
@@ -11,7 +12,7 @@ from PySide6.QtCore import QEvent, QObject, QProcess, QProcessEnvironment, QRect
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
-    QHBoxLayout, QLabel, QLayout, QLineEdit, QMessageBox, QPushButton, QScrollArea,
+    QHBoxLayout, QInputDialog, QLabel, QLayout, QLineEdit, QMessageBox, QPushButton, QScrollArea,
     QProgressDialog, QSizePolicy, QSpinBox, QTextEdit, QVBoxLayout, QWidget,
 )
 
@@ -851,12 +852,13 @@ class TrainingWorkspace(QWidget):
             self._set_remote_test_status(False, "Unlock the SSH key in Windows SSH Agent first")
             return
         code = self.totp_code.text().strip()
-        if not code:
+        if not code and self._needs_totp():
             self._set_remote_test_status(False, "Enter the current JUSUF Google Authenticator code first")
             self.totp_code.setFocus(); return
         self._pending_totp = code
         self._remote_test_passed = False; self.remote_test_button.setEnabled(False)
-        self._set_remote_test_status(False, "Verifying SSH key and the one-time JUSUF code…", "pending")
+        label = "Verifying SSH key and the one-time JUSUF code…" if self._needs_totp() else "Verifying SSH connection…"
+        self._set_remote_test_status(False, label, "pending")
         try: command = preflight_command(profile, self.backend.currentText())
         except Exception as exc:
             self.remote_test_button.setEnabled(True); self._set_remote_test_status(False, str(exc)); return
@@ -1132,12 +1134,38 @@ class TrainingWorkspace(QWidget):
         self.log.append(f"\nPackage build stopped: {message}")
         QMessageBox.critical(self, "Could not build the training package", message)
 
+    def _needs_totp(self) -> bool:
+        """True when the target host is JUSUF (requires Google Authenticator MFA)."""
+        host = self.remote_host.text().strip()
+        return "juelich.de" in host
+
+    def _ask_totp(self) -> str:
+        """Return the current TOTP code.
+
+        For JUSUF hosts: reads the stored field or opens a popup — returns "" if the user cancels.
+        For all other SSH hosts: MFA is not required, returns "" immediately.
+        """
+        if not self._needs_totp():
+            return ""
+        code = self.totp_code.text().strip()
+        if code:
+            return code
+        code, ok = QInputDialog.getText(
+            self, "JUSUF one-time code",
+            "Enter the current Google Authenticator code:",
+            QLineEdit.Password,
+        )
+        entered = code.strip() if ok else ""
+        if entered:
+            self.totp_code.setText(entered)
+        return entered
+
     def _synchronize(self) -> None:
         if not self._last_bundle: return
-        code = self.totp_code.text().strip()
-        if not code:
-            self.log.append("\nTransfer needs a fresh JUSUF Google Authenticator code. Enter it above, then click Transfer package again.")
-            self.totp_code.setFocus(); return
+        code = self._ask_totp()
+        if not code and self._needs_totp():
+            self.log.append("\nTransfer needs a fresh JUSUF Google Authenticator code.")
+            return
         self._pending_totp = code
         try: commands = sync_commands(self._profile(), self._last_bundle)
         except Exception as exc:
@@ -1147,13 +1175,13 @@ class TrainingWorkspace(QWidget):
     def _start_training(self) -> None:
         if not self._last_bundle: return
         if self.execution_target.currentText() == "Local":
-            command = [self.conda_path or "conda", "run", "-n", self.local_environment.currentText(), "python", "training_entry.py"]
+            command = [self.conda_path or "conda", "run", "--no-capture-output", "-n", self.local_environment.currentText(), "python", "-u", "training_entry.py"]
             self._run_commands([command], "Running training locally", str(self._last_bundle))
         else:
-            code = self.totp_code.text().strip()
-            if not code:
-                self.log.append("\nStarting on JUSUF needs a fresh Google Authenticator code. Enter it above, then click Start training again.")
-                self.totp_code.setFocus(); return
+            code = self._ask_totp()
+            if not code and self._needs_totp():
+                self.log.append("\nStarting on JUSUF needs a fresh Google Authenticator code.")
+                return
             self._pending_totp = code
             try: command = start_command(self._profile(), self._last_bundle)
             except Exception as exc:
@@ -1161,10 +1189,10 @@ class TrainingWorkspace(QWidget):
             self._run_commands([command], "Starting remote training")
 
     def _check_status(self) -> None:
-        code = self.totp_code.text().strip()
-        if not code:
-            self.log.append("\nChecking JUSUF needs a fresh Google Authenticator code. Enter it above, then click Check status again.")
-            self.totp_code.setFocus(); return
+        code = self._ask_totp()
+        if not code and self._needs_totp():
+            self.log.append("\nChecking JUSUF needs a fresh Google Authenticator code.")
+            return
         self._pending_totp = code
         try: command = status_command(self._profile(), self._last_job_id)
         except Exception as exc:
@@ -1173,10 +1201,10 @@ class TrainingWorkspace(QWidget):
 
     def _fetch_results(self) -> None:
         if not self._last_bundle: return
-        code = self.totp_code.text().strip()
-        if not code:
-            self.log.append("\nFetching from JUSUF needs a fresh Google Authenticator code. Enter it above, then click Fetch results again.")
-            self.totp_code.setFocus(); return
+        code = self._ask_totp()
+        if not code and self._needs_totp():
+            self.log.append("\nFetching from JUSUF needs a fresh Google Authenticator code.")
+            return
         self._pending_totp = code
         try: commands = fetch_commands(self._profile(), self._last_bundle)
         except Exception as exc:
@@ -1336,9 +1364,23 @@ class TrainingWorkspace(QWidget):
         env = "labelforge-facemap" if backend == "facemap" else "labelforge-dlc"
         package = "git+https://github.com/MouseLand/facemap.git" if backend == "facemap" else "deeplabcut"
         python = "3.10" if backend == "facemap" else "3.12"
-        if QMessageBox.question(self, "Install software", f"Create/update '{env}' from the official source?") != QMessageBox.Yes: return
+        has_gpu = shutil.which("nvidia-smi") is not None
+        gpu_note = " with NVIDIA GPU acceleration" if has_gpu else " (CPU only — no NVIDIA GPU detected)"
+        if QMessageBox.question(self, "Install software", f"Create/update '{env}' from the official source{gpu_note}?") != QMessageBox.Yes: return
         commands = [
             [self.conda_path, "create", "-n", env, f"python={python}", "pip", "-y"],
-            [self.conda_path, "run", "-n", env, "python", "-m", "pip", "install", "--upgrade", package],
         ]
+        if has_gpu and backend == "facemap":
+            # Install CUDA-enabled PyTorch before facemap so training uses the GPU.
+            commands.append([
+                self.conda_path, "run", "-n", env, "python", "-m", "pip", "install",
+                "torch", "torchvision", "--index-url", "https://download.pytorch.org/whl/cu124",
+            ])
+        commands.append([self.conda_path, "run", "-n", env, "python", "-m", "pip", "install", "--upgrade", package])
+        if backend == "facemap":
+            # Facemap 1.0.8 is not compatible with numpy 2.x — pin to the last 1.x release.
+            # This runs after facemap so it wins over any numpy 2.x pulled in by torch/torchvision.
+            commands.append([
+                self.conda_path, "run", "-n", env, "python", "-m", "pip", "install", "numpy<2",
+            ])
         self._run_commands(commands, f"Setting up {env}")

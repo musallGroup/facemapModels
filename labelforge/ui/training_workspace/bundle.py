@@ -198,14 +198,14 @@ def run_facemap() -> None:
             "Facemap bundle is valid, but facemap_training_adapter.py is missing. "
             "Generate/copy the project adapter before submitting this run."
         )
-    namespace = {"TRAINING_MANIFEST": CONFIG, "__name__": "__main__"}
+    namespace = {"TRAINING_MANIFEST": CONFIG, "__name__": "__main__", "__file__": str(script)}
     exec(compile(script.read_text(encoding="utf-8"), str(script), "exec"), namespace)
     if CONFIG.get("qc_enabled", True):
         try:
             qc = ROOT / "facemap_qc.py"
             if not qc.is_file():
                 raise RuntimeError("The Facemap QC runner is missing from this package.")
-            exec(compile(qc.read_text(encoding="utf-8"), str(qc), "exec"), {"__name__": "__main__"})
+            exec(compile(qc.read_text(encoding="utf-8"), str(qc), "exec"), {"__name__": "__main__", "__file__": str(qc)})
         except Exception as exc:
             failure = ROOT / "results" / "qc" / "QC_FAILED.txt"
             failure.parent.mkdir(parents=True, exist_ok=True)
@@ -232,7 +232,7 @@ def _slurm_text(config: TrainingBundleConfig) -> str:
         env_root = environment.rstrip('/')
         cv2_ensure = (
             f"{shlex.quote(env_root)}/bin/python -c 'import cv2' 2>/dev/null"
-            f" || {shlex.quote(env_root)}/bin/pip install --quiet opencv-python-headless\n"
+            f" || {shlex.quote(env_root)}/bin/pip install --quiet opencv-python-headless 2>/dev/null || true\n"
         )
         module_setup = (
             "module purge\nmodule load Stages/2025 GCCcore/.13.3.0 PyTorch/2.5.1\n"
@@ -276,6 +276,20 @@ def create_bundle(config: TrainingBundleConfig) -> Path:
     manifest["created_at"] = datetime.now().isoformat(timespec="seconds")
     manifest["bundle_format"] = 1
     manifest["source_computer"] = os.environ.get("COMPUTERNAME", "unknown")
+    # Pull per-keypoint hex colors from the sibling facemap_export.json so the
+    # QC video can draw dots in the same colours as the label maker.
+    _labels_path = Path(config.labels_or_config) if config.labels_or_config else None
+    if _labels_path:
+        for _candidate in (_labels_path.parent / "facemap_export.json",
+                           _labels_path.parent.parent / "facemap_export.json"):
+            if _candidate.is_file():
+                try:
+                    _fe = json.loads(_candidate.read_text(encoding="utf-8"))
+                    if "keypoint_colors" in _fe:
+                        manifest["keypoint_colors"] = _fe["keypoint_colors"]
+                except Exception:
+                    pass
+                break
     if config.sync_mode == "Copy complete training package":
         payload = bundle / "payload"
         payload.mkdir()

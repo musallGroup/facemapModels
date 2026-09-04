@@ -55,44 +55,52 @@ def remote_python(profile: RemoteProfile, backend: str = "") -> tuple[str, str]:
     return ":", f"conda run -n {quote_remote(environment)} python"
 
 
+def _is_jusuf(profile: RemoteProfile) -> bool:
+    """True when the target host is JUSUF (requires specific MAC and MFA)."""
+    return "juelich.de" in profile.host
+
+
 def ssh_transport_options(profile: RemoteProfile) -> list[str]:
     identity = Path(profile.identity_file)
     if not profile.identity_file or not identity.is_file():
         raise RuntimeError(f"SSH key not found: {profile.identity_file or 'no key selected'}")
-    return ["-m", JUSUF_MAC, "-i", str(identity), "-o", "BatchMode=yes", "-o", "ConnectTimeout=12"]
+    opts = ["-i", str(identity), "-o", "BatchMode=yes", "-o", "ConnectTimeout=12"]
+    if _is_jusuf(profile):
+        opts = ["-m", JUSUF_MAC] + opts
+    return opts
 
 
 def interactive_ssh_transport_options(profile: RemoteProfile) -> list[str]:
-    """SSH options for the user-attended JUSUF MFA preflight only."""
+    """SSH options for an interactive connection (MFA when required by the host)."""
     identity = Path(profile.identity_file)
     if not profile.identity_file or not identity.is_file():
         raise RuntimeError(f"SSH key not found: {profile.identity_file or 'no key selected'}")
-    return [
-        "-m", JUSUF_MAC, "-i", str(identity),
-        "-o", "BatchMode=no",
-        "-o", "PreferredAuthentications=publickey,keyboard-interactive",
-        "-o", "ConnectTimeout=12",
-    ]
+    opts = ["-i", str(identity), "-o", "BatchMode=no", "-o", "ConnectTimeout=12"]
+    if _is_jusuf(profile):
+        # JUSUF requires a specific MAC and keyboard-interactive for TOTP.
+        opts = ["-m", JUSUF_MAC] + opts + ["-o", "PreferredAuthentications=publickey,keyboard-interactive"]
+    return opts
 
 
 def scp_transport_options(profile: RemoteProfile) -> list[str]:
     identity = Path(profile.identity_file)
     if not profile.identity_file or not identity.is_file():
         raise RuntimeError(f"SSH key not found: {profile.identity_file or 'no key selected'}")
-    return ["-o", f"MACs={JUSUF_MAC}", "-i", str(identity), "-o", "BatchMode=yes", "-o", "ConnectTimeout=12"]
+    opts = ["-i", str(identity), "-o", "BatchMode=yes", "-o", "ConnectTimeout=12"]
+    if _is_jusuf(profile):
+        opts = ["-o", f"MACs={JUSUF_MAC}"] + opts
+    return opts
 
 
 def interactive_scp_transport_options(profile: RemoteProfile) -> list[str]:
-    """SCP options for one user-authorized transfer with a fresh JUSUF TOTP."""
+    """SCP options for an interactive transfer (MFA when required by the host)."""
     identity = Path(profile.identity_file)
     if not profile.identity_file or not identity.is_file():
         raise RuntimeError(f"SSH key not found: {profile.identity_file or 'no key selected'}")
-    return [
-        "-o", f"MACs={JUSUF_MAC}", "-i", str(identity),
-        "-o", "BatchMode=no",
-        "-o", "PreferredAuthentications=publickey,keyboard-interactive",
-        "-o", "ConnectTimeout=12",
-    ]
+    opts = ["-i", str(identity), "-o", "BatchMode=no", "-o", "ConnectTimeout=12"]
+    if _is_jusuf(profile):
+        opts = ["-o", f"MACs={JUSUF_MAC}"] + opts + ["-o", "PreferredAuthentications=publickey,keyboard-interactive"]
+    return opts
 
 
 def sync_commands(profile: RemoteProfile, bundle: Path) -> list[list[str]]:

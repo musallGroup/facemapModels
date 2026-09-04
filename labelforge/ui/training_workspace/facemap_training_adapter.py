@@ -1,6 +1,17 @@
 """Headless Facemap 1.0.8 adapter for LabelForge."""
-import csv,hashlib,json,math,random
+import csv,hashlib,json,math,random,sys
 from pathlib import Path
+from unittest.mock import MagicMock
+# Headless HPC: mock Qt/GUI modules that facemap imports at load time
+# but are not needed for training (no display on compute nodes).
+for _m in [
+    "PyQt5","PyQt5.QtGui","PyQt5.QtWidgets","PyQt5.QtCore","PyQt5.QtOpenGL",
+    "qtpy","qtpy.QtGui","qtpy.QtWidgets","qtpy.QtCore",
+    "pyqtgraph",
+    "facemap.gui","facemap.gui.help_windows","facemap.gui.gui",
+    "facemap.gui.io","facemap.gui.utils",
+]:
+    if _m not in sys.modules: sys.modules[_m]=MagicMock()
 import cv2,numpy as np,torch,torch.nn as nn
 from facemap.pose.pose import Pose
 import facemap.pose.pose as pm

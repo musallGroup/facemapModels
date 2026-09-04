@@ -61,6 +61,7 @@ class MainWindow(QMainWindow):
             QPushButton#WorkspaceTab:checked {
                 color: #eaeaea;
                 border-bottom: 3px solid #d18b47;
+                padding-bottom: 13px;
             }
 
             QPushButton#WorkspaceTab:hover {

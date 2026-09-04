@@ -4,7 +4,7 @@
 a = Analysis(
     ['app.py'],
     pathex=[],
-    binaries=[('D:/Miniconda/envs/fm_front/Library/bin/mkl*.dll', '.'), ('D:/Miniconda/envs/fm_front/Library/bin/libiomp*.dll', '.')],
+    binaries=[('D:/Miniconda/envs/fm_front/Library/bin/mkl*.dll', '.'), ('D:/Miniconda/envs/fm_front/Library/bin/libiomp*.dll', '.'), ('dist/LabelForgeAskpass.exe', '.')],
     datas=[('labelforge/assets', 'labelforge/assets'),
            ('labelforge/ui/training_workspace/facemap_training_adapter.py', 'labelforge/ui/training_workspace'),
            ('labelforge/ui/training_workspace/facemap_qc.py', 'labelforge/ui/training_workspace')],
