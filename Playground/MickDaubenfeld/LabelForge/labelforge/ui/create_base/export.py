@@ -449,12 +449,20 @@ class ExportPage(QWidget):
             writer.writeheader()
             writer.writerows(exported_rows)
 
+        keypoint_colors = {
+            keypoint.get("name", ""): keypoint.get("color", "#D18B47")
+            for group in self.keypoint_draft.get("groups", [])
+            for keypoint in group.get("keypoints", [])
+            if keypoint.get("name", "")
+        }
+
         manifest = {
             "format": "LabelForge Facemap Export",
             "project_name": self.project_draft.get("name", ""),
             "frame_count": len(self.frame_paths),
             "keypoint_count": len(self.keypoint_names),
             "keypoints": self.keypoint_names,
+            "keypoint_colors": keypoint_colors,
             "frames_dir": str(frames_dir),
             "labels_csv": str(export_csv),
             "visibility_rule": (

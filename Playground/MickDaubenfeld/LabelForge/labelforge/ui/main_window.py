@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 
 from .create_base.workflow import CreateBaseModelWorkflow
 from .refine_model.workflow import RefineModelWorkflow
+from .training_workspace import TrainingWorkspace
 
 
 class MainWindow(QMainWindow):
@@ -60,6 +61,7 @@ class MainWindow(QMainWindow):
             QPushButton#WorkspaceTab:checked {
                 color: #eaeaea;
                 border-bottom: 3px solid #d18b47;
+                padding-bottom: 13px;
             }
 
             QPushButton#WorkspaceTab:hover {
@@ -140,8 +142,9 @@ class MainWindow(QMainWindow):
             }
 
             #WizardPanel {
-                background: #1d2026;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #20242a, stop:1 #1d2026);
                 border: 1px solid #2d323a;
+                border-left: 3px solid #6f5034;
                 border-radius: 16px;
             }
 
@@ -198,6 +201,13 @@ class MainWindow(QMainWindow):
                 background: #dfa15f;
             }
 
+            QPushButton#PrimaryNextButton:disabled,
+            QPushButton#SecondaryActionButton:disabled {
+                background: #24282e;
+                color: #666d77;
+                border: 1px solid #30353d;
+            }
+
             QPushButton#WizardStepTab {
                 background: transparent;
                 color: #737984;
@@ -252,6 +262,103 @@ class MainWindow(QMainWindow):
                 border: 1px solid #d18b47;
             }
 
+            QComboBox {
+                background: #14161a;
+                color: #eaeaea;
+                border: 1px solid #3a4049;
+                border-radius: 8px;
+                padding: 7px 34px 7px 10px;
+                min-height: 24px;
+                selection-background-color: #d18b47;
+                selection-color: #111111;
+            }
+
+            QComboBox:hover,
+            QComboBox:focus,
+            QComboBox:on {
+                border: 1px solid #d18b47;
+                background: #181b20;
+            }
+
+            QComboBox:disabled {
+                background: #1b1e23;
+                color: #737984;
+                border-color: #2d323a;
+            }
+
+            QComboBox::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 28px;
+                background: #2a2e35;
+                border: none;
+                border-left: 1px solid #3a4049;
+                border-top-right-radius: 7px;
+                border-bottom-right-radius: 7px;
+            }
+
+            QComboBox::drop-down:hover {
+                background: #343942;
+            }
+
+            QComboBox QAbstractItemView {
+                background: #1d2026;
+                color: #eaeaea;
+                border: 1px solid #3a4049;
+                outline: none;
+                padding: 4px;
+                selection-background-color: #d18b47;
+                selection-color: #111111;
+            }
+
+            QSpinBox,
+            QDoubleSpinBox {
+                background: #14161a;
+                color: #eaeaea;
+                border: 1px solid #3a4049;
+                border-radius: 7px;
+                padding: 5px 8px;
+                min-height: 22px;
+                selection-background-color: #d18b47;
+                selection-color: #111111;
+            }
+
+            QSpinBox:focus,
+            QDoubleSpinBox:focus {
+                border: 1px solid #d18b47;
+            }
+
+            QSpinBox::up-button,
+            QSpinBox::down-button,
+            QDoubleSpinBox::up-button,
+            QDoubleSpinBox::down-button {
+                background: #2a2e35;
+                border: none;
+                border-left: 1px solid #3a4049;
+                width: 20px;
+            }
+
+            QSpinBox::up-button,
+            QDoubleSpinBox::up-button {
+                border-top-right-radius: 6px;
+            }
+
+            QSpinBox::down-button,
+            QDoubleSpinBox::down-button {
+                border-bottom-right-radius: 6px;
+            }
+
+            QAbstractSpinBox:disabled {
+                background: #1b1e23;
+                color: #737984;
+            }
+
+            QScrollArea,
+            QScrollArea > QWidget,
+            QScrollArea > QWidget > QWidget {
+                background: #14161a;
+            }
+
             QPushButton#SecondaryActionButton {
                 background: #2a2e35;
                 color: #eaeaea;
@@ -264,6 +371,234 @@ class MainWindow(QMainWindow):
             QPushButton#SecondaryActionButton:hover {
                 border: 1px solid #d18b47;
                 background: #343942;
+            }
+
+            QPushButton#SecondaryActionButton:disabled {
+                background: #24282e;
+                color: #666d77;
+                border: 1px solid #30353d;
+            }
+
+            QPushButton#ModeCard {
+                background: #181b20;
+                color: #eaeaea;
+                border: 1px solid #3a4049;
+                border-radius: 12px;
+                padding: 14px 18px;
+                text-align: left;
+                font-size: 15px;
+                font-weight: 700;
+            }
+
+            QPushButton#ModeCard:hover {
+                background: #22262d;
+                border-color: #8f6640;
+            }
+
+            QPushButton#ModeCard:checked {
+                background: #2a2119;
+                color: #f4c48f;
+                border: 2px solid #d18b47;
+            }
+
+            QPushButton#AdvancedToggle {
+                background: transparent;
+                color: #c9a77f;
+                border: none;
+                padding: 8px 2px;
+                text-align: left;
+                font-weight: 600;
+            }
+
+            QPushButton#AdvancedToggle:hover { color: #f4c48f; }
+
+            QFrame#AdvancedPanel {
+                background: #17191e;
+                border: 1px solid #30353d;
+                border-radius: 9px;
+                padding: 8px;
+            }
+
+            QLabel#ReadinessChecklist {
+                background: #17191e;
+                border: 1px solid #30353d;
+                border-radius: 9px;
+                padding: 13px;
+            }
+
+            QLabel#SoftwareStatus {
+                color: #e07171;
+                font-weight: 700;
+                padding: 4px 7px;
+            }
+
+            QLabel#SoftwareStatus[ready="true"] { color: #75c995; }
+
+            QLabel#RemoteTestStatus {
+                color: #aeb4bf;
+                font-weight: 700;
+                background: #1a1d22;
+                border: 1px solid #3a4049;
+                border-radius: 8px;
+                padding: 9px 12px;
+            }
+
+            QLabel#RemoteTestStatus[state="failed"] {
+                color: #e07171;
+                background: #23191b;
+                border-color: #5c3439;
+            }
+
+            QLabel#RemoteTestStatus[state="pending"] {
+                color: #f0a354;
+                background: #292016;
+                border-color: #6b4b2d;
+            }
+
+            QLabel#RemoteTestStatus[state="ready"] {
+                color: #75c995;
+                background: #17231c;
+                border-color: #315c43;
+            }
+
+            QLabel#AgentStatus {
+                color: #aeb4bf;
+                background: #1a1d22;
+                border: 1px solid #3a4049;
+                border-radius: 8px;
+                padding: 9px 12px;
+                font-weight: 600;
+            }
+
+            QLabel#AgentStatus[state="failed"] { color: #e07171; border-color: #5c3439; background: #23191b; }
+            QLabel#AgentStatus[state="pending"] { color: #f0a354; border-color: #6b4b2d; background: #292016; }
+            QLabel#AgentStatus[state="ready"] { color: #75c995; border-color: #315c43; background: #17231c; }
+
+            QFrame#SideRail {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1d2026, stop:1 #17191d);
+                border: 1px solid #2d323a;
+                border-radius: 16px;
+            }
+
+            QFrame#RouteRail {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #211d19, stop:0.48 #1c2026, stop:1 #17191d);
+                border: 1px solid #59432d;
+                border-top: 3px solid #d18b47;
+                border-radius: 18px;
+            }
+
+            QLabel#RailTitle { color: #f0a354; font-size: 20px; font-weight: 800; }
+            QLabel#RailEyebrow { color: #c99a67; font-size: 11px; font-weight: 800; letter-spacing: 1px; }
+            QLabel#RailCaption { color: #858d98; font-size: 12px; line-height: 1.3; }
+
+            QLabel#ContextBrand {
+                background: transparent;
+                border: none;
+                font-size: 23px;
+                font-weight: 800;
+                padding: 0;
+            }
+
+            QFrame#HelpBubble {
+                background: rgba(30, 34, 40, 185);
+                border: 1px solid #3a414b;
+                border-left: 3px solid #d18b47;
+                border-radius: 12px;
+            }
+
+            QLabel#HelpBubbleTitle {
+                color: #f2c18b;
+                font-size: 15px;
+                font-weight: 800;
+                background: transparent;
+                border: none;
+            }
+
+            QLabel#HelpBubbleBody {
+                color: #c4c9d1;
+                font-size: 12px;
+                background: transparent;
+                border: none;
+            }
+
+            QLabel#RouteStep {
+                color: #666d77;
+                background: #171a1f;
+                border: 1px solid #30353d;
+                border-left: 4px solid #343941;
+                border-radius: 9px;
+                padding: 13px 12px;
+                font-size: 13px;
+                font-weight: 750;
+            }
+
+            QLabel#RouteStep[state="active"] { color: #ffd09a; background: #302419; border-color: #704b2b; border-left-color: #e19a50; }
+            QLabel#RouteStep[state="complete"] { color: #86daa5; background: #18251d; border-color: #315b42; border-left-color: #55ad77; }
+
+            QLabel#InlineHint {
+                color: #9097a3;
+                font-size: 11px;
+                padding: 0 2px 3px 2px;
+            }
+
+            QLabel#StepPrompt {
+                color: #d6a36b;
+                font-weight: 600;
+                padding-top: 3px;
+            }
+
+            QLabel#TargetExplanation {
+                background: #20242a;
+                color: #c5cad2;
+                border-left: 3px solid #d18b47;
+                border-radius: 5px;
+                padding: 9px 11px;
+            }
+
+            QLabel#ActionRoad {
+                background: #14171b;
+                border: 1px solid #343a43;
+                border-radius: 10px;
+                padding: 14px 16px;
+                font-size: 13px;
+            }
+
+            QMessageBox,
+            QProgressDialog {
+                background: #1d2026;
+                color: #eaeaea;
+            }
+
+            QMessageBox QLabel,
+            QProgressDialog QLabel {
+                color: #eaeaea;
+                font-size: 13px;
+                min-width: 360px;
+                padding: 8px;
+            }
+
+            QMessageBox QPushButton,
+            QProgressDialog QPushButton {
+                background: #2a2e35;
+                color: #eaeaea;
+                border: 1px solid #4a505a;
+                border-radius: 7px;
+                padding: 8px 16px;
+                min-width: 90px;
+            }
+
+            QMessageBox QPushButton:hover { border-color: #d18b47; }
+
+            QProgressBar {
+                background: #111317;
+                border: 1px solid #3a4049;
+                border-radius: 7px;
+                min-height: 14px;
+            }
+
+            QProgressBar::chunk {
+                background: #d18b47;
+                border-radius: 6px;
             }
 
             QPushButton#DangerGhostButton {
@@ -337,7 +672,7 @@ class MainWindow(QMainWindow):
             "Model Library — Specialize",
             "Hier wird später ein Basismodell ausgewählt, von dem ein spezialisierter Zweig erstellt wird."
         )
-        self.training_page = self.build_training_page()
+        self.training_page = TrainingWorkspace()
 
         for page in [
             self.home_page,
