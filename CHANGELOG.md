@@ -5,6 +5,16 @@ Versions refer to the internal build number tracked by the development team.
 
 ---
 
+## v37 — 2026-09-04
+
+### UI
+- **Dropdowns ignorieren Scroll** — alle `QComboBox`-Instanzen in der gesamten App (Training Workspace, Label Workspace, Keypoint-Setup) ändern ihre Auswahl nicht mehr wenn die Maus darüber scrollt; wird global per Monkey-Patch in `app.py` einmalig gesetzt
+
+### QC Video
+- **Kein Doppelring mehr** — antialiasing (`LINE_AA`) von den Keypoint-Kreisen entfernt; solide Kreise ohne AA-Bleed erzeugen keinen hellen Ring am Rand
+
+---
+
 ## v36 — 2026-09-04
 
 ### QC Video

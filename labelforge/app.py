@@ -3,9 +3,18 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon, QPixmap
-from PySide6.QtWidgets import QApplication, QSplashScreen
+from PySide6.QtWidgets import QApplication, QComboBox, QSplashScreen
 
 from .ui.main_window import MainWindow
+
+
+def _combo_ignore_wheel(self, event) -> None:  # type: ignore[override]
+    """Prevent mouse-wheel from changing a closed combo box accidentally."""
+    event.ignore()
+
+
+# Patch globally so every QComboBox (and subclass) in the app ignores scroll.
+QComboBox.wheelEvent = _combo_ignore_wheel  # type: ignore[method-assign]
 
 
 def asset_path(filename: str) -> Path:
