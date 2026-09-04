@@ -129,11 +129,11 @@ def main():
         ok,frame=cap.read()
         if not ok:break
         row=pred[j]
-        # Draw keypoints on full frame
+        # Draw keypoints on full frame (dark backing circle first, colour on top)
         for i,(x,y,lik) in enumerate(row):
             if np.isfinite(x) and np.isfinite(y) and lik>=threshold:
+                cv2.circle(frame,(int(x),int(y)),dot_r+2,(0,0,0),-1,cv2.LINE_AA)
                 cv2.circle(frame,(int(x),int(y)),dot_r,colors[i],-1,cv2.LINE_AA)
-                cv2.circle(frame,(int(x),int(y)),dot_r+1,(0,0,0),1,cv2.LINE_AA)  # thin outline for visibility
         # Build zoom panel (letterboxed — no stretching)
         crop=frame[y1z:y1z+ch,x1z:x1z+cw]
         zoom,zx0,zy0,zscale=letterbox_zoom(crop,panel_w,h)
@@ -144,8 +144,8 @@ def main():
                 if 0<=lx<cw and 0<=ly<ch:
                     px=int(zx0+lx*zscale); py=int(zy0+ly*zscale)
                     zoom_r=max(5,int(dot_r*zscale*0.8))
+                    cv2.circle(zoom,(px,py),zoom_r+2,(0,0,0),-1,cv2.LINE_AA)
                     cv2.circle(zoom,(px,py),zoom_r,colors[i],-1,cv2.LINE_AA)
-                    cv2.circle(zoom,(px,py),zoom_r+1,(0,0,0),1,cv2.LINE_AA)
         # Label header on zoom panel
         cv2.rectangle(zoom,(0,0),(panel_w,42),(30,30,30),-1)
         cv2.putText(zoom,f"ZOOM  •  {focus}",(12,28),cv2.FONT_HERSHEY_SIMPLEX,.7,(220,220,220),2,cv2.LINE_AA)

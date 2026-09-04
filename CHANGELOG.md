@@ -5,6 +5,19 @@ Versions refer to the internal build number tracked by the development team.
 
 ---
 
+## v36 — 2026-09-04
+
+### QC Video
+- **Cleaner keypoint dots** — replaced filled-circle + outline-circle (which looked like double rings) with a dark backing circle drawn first and the coloured dot on top; gives a crisp coloured dot with a natural dark border on both the full frame and the zoom panel
+
+### Installer
+- **GPU install order fixed** — CUDA-enabled PyTorch is now installed *after* Facemap, not before; `pip install facemap` pulls in CPU-only torch as a dependency and would silently overwrite a pre-installed CUDA build — installing last guarantees the CUDA wheel wins
+
+### Docs
+- **CHANGELOG pre-versioning history** — added detailed development history from 13.08.–26.08.2026 (early prototype, Create Base Model, Refine Existing Model)
+
+---
+
 ## v35 — 2026-09-04
 
 ### QC Video
