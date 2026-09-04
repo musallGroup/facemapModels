@@ -709,12 +709,15 @@ class TrainingWorkspace(QWidget):
         if not hasattr(self, "route_labels"): return
         mode_ready = bool(self._training_mode())
         material_ready = hasattr(self, "execution_card") and not self.execution_card.isHidden()
+        bundle_ready = getattr(self, "_last_bundle", None) is not None
+        training_done = getattr(self, "_training_done", False)
+        actions_visible = hasattr(self, "actions_card") and not self.actions_card.isHidden()
         states = [
             "complete" if mode_ready else "active",
             "complete" if self.conda_path else ("active" if mode_ready else "locked"),
             "complete" if material_ready else ("active" if mode_ready else "locked"),
-            "active" if material_ready else "locked",
-            "active" if hasattr(self, "actions_card") and not self.actions_card.isHidden() else "locked",
+            "complete" if bundle_ready else ("active" if material_ready else "locked"),
+            "complete" if training_done else ("active" if actions_visible else "locked"),
         ]
         for label, state in zip(self.route_labels, states):
             label.setProperty("state", state); label.style().unpolish(label); label.style().polish(label)
@@ -1257,6 +1260,8 @@ class TrainingWorkspace(QWidget):
                     elif completed or no_rows:
                         self._job_id_label.setText(f"✓  Job {self._last_job_id} finished — ready to fetch results.")
                     self._job_id_label.setVisible(True)
+            if self._operation.startswith("Running training locally"):
+                self._training_done = True; self._refresh_route_rail()
             if self._operation.startswith("Fetching"):
                 self._set_action_stage(8)
                 if self._elapsed_timer:

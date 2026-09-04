@@ -9,6 +9,7 @@ Versions refer to the internal build number tracked by the development team.
 
 ### UI
 - **Dropdowns ignorieren Scroll** — alle `QComboBox`-Instanzen in der gesamten App (Training Workspace, Label Workspace, Keypoint-Setup) ändern ihre Auswahl nicht mehr wenn die Maus darüber scrollt; wird global per Monkey-Patch in `app.py` einmalig gesetzt
+- **Training Route 04 + 05 werden grün** — Schritt 04 (Choose Computer) schaltet auf grün sobald das Training-Bundle gebaut wurde; Schritt 05 (Launch Run) schaltet auf grün wenn das lokale Training abgeschlossen ist; bisher blieben beide dauerhaft auf „active" (orange) stecken
 
 ### QC Video
 - **Kein Doppelring mehr** — antialiasing (`LINE_AA`) von den Keypoint-Kreisen entfernt; solide Kreise ohne AA-Bleed erzeugen keinen hellen Ring am Rand
