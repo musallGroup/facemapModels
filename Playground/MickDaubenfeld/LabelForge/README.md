@@ -68,14 +68,14 @@ LabelForge/
 │           ├── facemap_qc.py       ← QC video generator (runs on HPC or locally)
 │           └── naming.py           ← model name helpers
 │
-├── fM_checkFacemapExport_MD.py     ← dev: inspect a Facemap export folder
-├── fM_checkDlcProject_MD.py        ← dev: inspect a DeepLabCut project folder
-└── fM_devLabeling_MD.py            ← dev: standalone labeling prototype
+├── LF_checkFacemapExport_MD.py     ← dev: inspect a Facemap export folder
+├── LF_checkDlcProject_MD.py        ← dev: inspect a DeepLabCut project folder
+└── LF_devLabeling_MD.py            ← dev: standalone labeling prototype
 ```
 
 > `app.py`, the spec files and the `labelforge/` package keep their original names —
 > renaming them would break PyInstaller and Python imports.
-> Dev/helper scripts follow the `fM_functionName_MD.py` convention.
+> Dev/helper scripts follow the `LF_functionName_MD.py` convention (LF = LabelForge).
 
 ---
 
