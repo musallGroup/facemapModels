@@ -76,7 +76,9 @@ Versions refer to the internal build number tracked by the development team.
 
 ---
 
-## Earlier (pre-changelog)
+## Training Workspace (pre-versioning, ab ~27.08.2026)
+
+*Zeitraum vor v31, kein separates Versionstag.*
 
 - Initial Facemap training bundle implementation (`facemap_training_adapter.py`, `facemap_qc.py`, `bundle.py`)
 - JUSUF SSH workflow: preflight, transfer, start, check status, fetch results
@@ -84,3 +86,44 @@ Versions refer to the internal build number tracked by the development team.
 - QC clip pre-cutting during bundle creation to reduce transfer size
 - Static zoom anchor computed from median keypoint position
 - Job status timer and `sacct` fallback for completed/failed JUSUF jobs
+
+---
+
+## Refine Existing Model — 26.08.2026
+
+Git-Commit: `ec286e9`
+
+- Auswahl eines vorhandenen Facemap-`.pt` oder DLC-Projektordners als Parent-Modell
+- Parent-Model-Metadaten werden gespeichert; Keypoint-Schema bei Refinement gesperrt
+- Automatische nächste Versionsnummer aus dem Parent abgeleitet
+- Externe Facemap-Modelle und DLC-Projekte importierbar
+- Keypoints aus Facemap-CSV oder DLC-`bodyparts` ausgelesen
+- Gruppen, Farben und Shortcuts für externe Modelle konfigurierbar
+- `labelforge_model.json` als persistentes Modell-Metadaten-Format
+- Header-Freischaltung erst nach erfolgreicher Parent-Auswahl
+- Dark-Theme-Importdialog mit lesbarer Schrift
+- QtCore-/ICU-PyInstaller-Problem behoben
+
+---
+
+## Vor der Versionierung — 13.08. bis 26.08.2026
+
+*Früher Prototyp, keine Build-Nummern. Belege: `Backup\app V1.py`, `Backup\app(3).py`, `Backup\main_window V1.py`, `Backup\main_window V2.py`.*
+
+### App-Grundgerüst
+- Erste PySide6-App mit MainWindow
+- Startseite mit „Label Workspace" und „Training Workspace" als Einstieg
+- Dunkles Design mit Orange als Akzentfarbe, Corporate-Design-Elemente
+- LabelForge-Icon und Extended Logo
+
+### Create Base Model
+- Projektinformationen, Keypoint-Gruppen und Farbpaletten
+- Frame-Auswahl und Video-Vorschau
+- Frame-Extraktion → `extraction_manifest.csv`
+- Labeling-Oberfläche: visible / not_visible / unset
+- Frame Mode und Keypoint Mode
+- Zoom, Pan, Helligkeit, Kontrast und Gamma
+- Review-Seite mit gruppierten Issues
+- Facemap-Export und DeepLabCut-Projektexport
+- DLC-Smoke-Test und Facemap-Strukturtest
+- PyInstaller-Build mit MKL/OpenMP
